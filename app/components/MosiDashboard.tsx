@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type Screen = "fed" | "models";
 type Venue = "CME" | "Polymarket" | "Kalshi" | "Pascal";
@@ -18,6 +18,7 @@ type InflationMetric = {
   label: string;
   value: string;
   previous: string;
+  priorValue: string;
   direction: "up" | "down" | "flat";
   period: string;
   source: string;
@@ -55,19 +56,19 @@ const fallbackMarkets: MarketSignal[] = [
 ];
 
 const fallbackInflation: InflationMetric[] = [
-  { label: "Headline CPI", value: "—", previous: "—", direction: "flat", period: "latest YoY", source: "BLS · CPIAUCSL" },
-  { label: "Core CPI", value: "—", previous: "—", direction: "flat", period: "latest YoY", source: "BLS · CPILFESL" },
-  { label: "Headline PCE", value: "—", previous: "—", direction: "flat", period: "latest YoY", source: "BEA · PCEPI" },
-  { label: "Core PCE", value: "—", previous: "—", direction: "flat", period: "latest YoY", source: "BEA · PCEPILFE" },
-  { label: "Median CPI", value: "—", previous: "—", direction: "flat", period: "latest YoY", source: "Cleveland Fed" },
-  { label: "Trimmed PCE", value: "—", previous: "—", direction: "flat", period: "latest YoY", source: "Dallas Fed" },
+  { label: "Headline CPI", value: "—", previous: "—", priorValue: "—", direction: "flat", period: "latest YoY", source: "BLS · CPIAUCSL" },
+  { label: "Core CPI", value: "—", previous: "—", priorValue: "—", direction: "flat", period: "latest YoY", source: "BLS · CPILFESL" },
+  { label: "Headline PCE", value: "—", previous: "—", priorValue: "—", direction: "flat", period: "latest YoY", source: "BEA · PCEPI" },
+  { label: "Core PCE", value: "—", previous: "—", priorValue: "—", direction: "flat", period: "latest YoY", source: "BEA · PCEPILFE" },
+  { label: "Median CPI", value: "—", previous: "—", priorValue: "—", direction: "flat", period: "latest YoY", source: "Cleveland Fed" },
+  { label: "Trimmed PCE", value: "—", previous: "—", priorValue: "—", direction: "flat", period: "latest YoY", source: "Dallas Fed" },
 ];
 
 const modelFallbacks = [
-  { company: "OpenAI", model: "Next flagship", median: "Q1 2027", inner: "Dec ’26 – Apr ’27", outer: "Oct ’26 – Aug ’27", confidence: 54, color: "coral" },
-  { company: "Anthropic", model: "Next Claude", median: "Dec 2026", inner: "Oct ’26 – Feb ’27", outer: "Sep ’26 – May ’27", confidence: 61, color: "violet" },
+  { company: "OpenAI", model: "Next flagship", median: "Q1 2027", inner: "Dec ’26 – Apr ’27", outer: "Oct ’26 – Aug ’27", confidence: 54, color: "green" },
+  { company: "Anthropic", model: "Next Claude", median: "Dec 2026", inner: "Oct ’26 – Feb ’27", outer: "Sep ’26 – May ’27", confidence: 61, color: "coral" },
   { company: "Google", model: "Next Gemini", median: "Nov 2026", inner: "Oct ’26 – Jan ’27", outer: "Sep ’26 – Apr ’27", confidence: 68, color: "blue" },
-  { company: "xAI", model: "Next Grok", median: "Feb 2027", inner: "Dec ’26 – Apr ’27", outer: "Oct ’26 – Jul ’27", confidence: 47, color: "green" },
+  { company: "xAI", model: "Next Grok", median: "Feb 2027", inner: "Dec ’26 – Apr ’27", outer: "Oct ’26 – Jul ’27", confidence: 47, color: "mono" },
 ];
 
 const fedPath = [
@@ -214,10 +215,18 @@ async function fetchFredMetric(series: FredSeries): Promise<InflationMetric> {
     label: series.label,
     value: `${value.toFixed(1)}%`,
     previous: `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}`,
+    priorValue: `${prior.toFixed(1)}%`,
     direction: Math.abs(delta) < 0.05 ? "flat" : delta > 0 ? "up" : "down",
     period: new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${latest[0]}T00:00:00Z`)),
     source: `FRED · ${series.id}`,
   };
+}
+
+async function fetchLatestFredValue(id: string) {
+  const response = await fetch(`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${id}`, { signal: AbortSignal.timeout(7000) });
+  if (!response.ok) throw new Error(`${response.status}`);
+  const latest = (await response.text()).trim().split("\n").slice(1).reverse().find((line) => Number.isFinite(Number(line.split(",")[1])));
+  return latest ? Number(latest.split(",")[1]) : null;
 }
 
 export function MosiDashboard({ screen }: { screen: Screen }) {
@@ -225,13 +234,15 @@ export function MosiDashboard({ screen }: { screen: Screen }) {
   const [inflation, setInflation] = useState<InflationMetric[]>(fallbackInflation);
   const [loading, setLoading] = useState(true);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const [effectiveRate, setEffectiveRate] = useState<number | null>(null);
 
   useEffect(() => {
     let active = true;
     Promise.all([
       fetchPredictionMarkets(screen),
       screen === "fed" ? Promise.allSettled(fredSeries.map(fetchFredMetric)) : Promise.resolve([]),
-    ]).then(([liveMarkets, fredResults]) => {
+      screen === "fed" ? fetchLatestFredValue("DFF").catch(() => null) : Promise.resolve(null),
+    ]).then(([liveMarkets, fredResults, liveEffectiveRate]) => {
       if (!active) return;
       setMarkets(liveMarkets);
       if (screen === "fed") {
@@ -240,6 +251,7 @@ export function MosiDashboard({ screen }: { screen: Screen }) {
           .map((result) => result.value);
         if (liveInflation.length) setInflation(liveInflation);
       }
+      if (liveEffectiveRate != null) setEffectiveRate(liveEffectiveRate);
       setUpdatedAt(new Date());
       setLoading(false);
     });
@@ -287,7 +299,7 @@ export function MosiDashboard({ screen }: { screen: Screen }) {
         </section>
 
         {screen === "fed" ? (
-          <FedScreen markets={shownMarkets} inflation={inflation} isFallback={!markets.length && !loading} />
+          <FedScreen markets={shownMarkets} inflation={inflation} isFallback inflationRate={effectiveRate} />
         ) : (
           <ModelsScreen markets={shownMarkets} isFallback={!markets.length && !loading} />
         )}
@@ -300,34 +312,26 @@ export function MosiDashboard({ screen }: { screen: Screen }) {
   );
 }
 
-function FedScreen({ markets, inflation, isFallback }: { markets: MarketSignal[]; inflation: InflationMetric[]; isFallback: boolean }) {
+function FedScreen({ markets, inflation, isFallback, inflationRate }: { markets: MarketSignal[]; inflation: InflationMetric[]; isFallback: boolean; inflationRate: number | null }) {
+  const path = useMemo(() => {
+    if (inflationRate == null) return fedPath;
+    const reductions = [0, .15, .28, .51, .70, .81];
+    return fedPath.map((point, index) => ({ ...point, rate: Number((inflationRate - reductions[index]).toFixed(2)) }));
+  }, [inflationRate]);
   return (
     <>
       <section className="signal-strip" aria-label="Current monetary policy summary">
-        <div><span>Current effective rate</span><strong>4.33%</strong><small>EFFR</small></div>
+        <div><span>Current effective rate</span><strong>{inflationRate == null ? "—" : `${inflationRate.toFixed(2)}%`}</strong><small>FRED · DFF</small></div>
         <div><span>Next move priced</span><strong className="accent">−25 bp</strong><small>at 61%</small></div>
-        <div><span>Year-end consensus</span><strong>3.82%</strong><small>−51 bp from now</small></div>
+        <div><span>Year-end reference</span><strong>{inflationRate == null ? "—" : `${path[3].rate.toFixed(2)}%`}</strong><small>−51 bp from now</small></div>
         <div><span>Signal agreement</span><strong>Medium</strong><small>3 of 4 venues</small></div>
       </section>
 
       <section className="dashboard-grid fed-grid">
         <article className="panel path-panel">
-          <PanelHeading kicker="FORWARD CURVE" title="Market-implied policy path" aside="Median · 20–80% range" />
+          <PanelHeading kicker="FORWARD CURVE" title="Market-implied policy graph" aside="Exact rate · 20–80% range" />
           {isFallback && <DataNote />}
-          <div className="rate-chart" role="img" aria-label="Illustrative forward policy rate path declining from 4.33 percent now to 3.52 percent by June">
-            <div className="axis-labels"><span>4.50%</span><span>4.00%</span><span>3.50%</span></div>
-            <div className="chart-gridlines"><i /><i /><i /></div>
-            <div className="chart-points">
-              {fedPath.map((point, index) => (
-                <div className="chart-column" key={point.month}>
-                  <div className="range" style={{ height: `${30 + index * 7}px`, bottom: `${18 + (point.rate - 3.4) * 115}px` }} />
-                  <span className="dot" style={{ bottom: `${18 + (point.rate - 3.4) * 115}px` }} />
-                  <strong>{point.rate.toFixed(2)}%</strong>
-                  <small>{point.month}</small>
-                </div>
-              ))}
-            </div>
-          </div>
+          <RateGraph points={path} />
           <div className="legend"><span><i className="legend-dot" /> Median path</span><span><i className="legend-band" /> 20–80% market range</span></div>
         </article>
 
@@ -347,13 +351,76 @@ function FedScreen({ markets, inflation, isFallback }: { markets: MarketSignal[]
               <div><span>{metric.label}</span><small>{metric.period}</small></div>
               <strong>{metric.value}</strong>
               <p className={metric.direction}>{metric.previous} <span>vs prior</span></p>
+              <div className="metric-gauges"><span><small>PREV</small><strong>{metric.priorValue}</strong></span><span><small>NEXT EST.</small><strong>—</strong></span></div>
               <footer>{metric.source}</footer>
             </article>
           ))}
         </div>
       </section>
+      <section className="release-tape" aria-label="Upcoming inflation releases">
+        <div><span>NEXT RELEASES</span><strong>Official agency calendar</strong></div>
+        <a href="https://www.bls.gov/schedule/news_release/cpi.htm" target="_blank" rel="noreferrer"><span>CPI · JUL 2026</span><strong>AUG 12 · 8:30 ET</strong><small>Consensus pending</small></a>
+        <a href="https://www.bea.gov/news/schedule" target="_blank" rel="noreferrer"><span>PCE · JUL 2026</span><strong>AUG 26 · 8:30 ET</strong><small>Consensus pending</small></a>
+      </section>
     </>
   );
+}
+
+function RateGraph({ points }: { points: typeof fedPath }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const draw = () => {
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      const ratio = window.devicePixelRatio || 1;
+      canvas.width = Math.round(width * ratio);
+      canvas.height = Math.round(height * ratio);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.scale(ratio, ratio);
+      const pad = { x: 24, top: 24, bottom: 38 };
+      const graphHeight = height - pad.top - pad.bottom;
+      const min = Math.floor((Math.min(...points.map((p) => p.rate)) - .25) * 4) / 4;
+      const max = Math.ceil((Math.max(...points.map((p) => p.rate)) + .25) * 4) / 4;
+      const x = (index: number) => pad.x + index * ((width - pad.x * 2) / (points.length - 1));
+      const y = (rate: number) => pad.top + ((max - rate) / (max - min)) * graphHeight;
+      ctx.clearRect(0, 0, width, height);
+      ctx.strokeStyle = "#e1e5df";
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 4; i++) {
+        const gy = pad.top + (graphHeight / 3) * i;
+        ctx.beginPath(); ctx.moveTo(pad.x, gy); ctx.lineTo(width - pad.x, gy); ctx.stroke();
+      }
+      ctx.beginPath();
+      points.forEach((point, index) => {
+        const spread = .06 + index * .035;
+        const command = index === 0 ? "moveTo" : "lineTo";
+        ctx[command](x(index), y(point.rate + spread));
+      });
+      [...points].reverse().forEach((point, reverseIndex) => {
+        const index = points.length - 1 - reverseIndex;
+        const spread = .06 + index * .035;
+        ctx.lineTo(x(index), y(point.rate - spread));
+      });
+      ctx.closePath(); ctx.fillStyle = "rgba(241,102,69,.15)"; ctx.fill();
+      ctx.beginPath();
+      points.forEach((point, index) => index ? ctx.lineTo(x(index), y(point.rate)) : ctx.moveTo(x(index), y(point.rate)));
+      ctx.strokeStyle = "#f16645"; ctx.lineWidth = 3; ctx.lineJoin = "round"; ctx.lineCap = "round"; ctx.stroke();
+      points.forEach((point, index) => { ctx.beginPath(); ctx.arc(x(index), y(point.rate), 4.5, 0, Math.PI * 2); ctx.fillStyle = "#f16645"; ctx.fill(); ctx.strokeStyle = "#fbfcf9"; ctx.lineWidth = 3; ctx.stroke(); });
+    };
+    draw();
+    const observer = new ResizeObserver(draw);
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, [points]);
+
+  return <div className="rate-graph" role="img" aria-label={`Forward policy rate graph from ${points[0].rate.toFixed(2)} percent now to ${points.at(-1)!.rate.toFixed(2)} percent by June`}>
+    <canvas ref={canvasRef} />
+    <div className="graph-values">{points.map((point) => <span key={point.month}><strong>{point.rate.toFixed(2)}%</strong><small>{point.month}</small></span>)}</div>
+  </div>;
 }
 
 function ModelsScreen({ markets, isFallback }: { markets: MarketSignal[]; isFallback: boolean }) {
@@ -414,7 +481,7 @@ function PanelHeading({ kicker, title, aside }: { kicker: string; title: string;
   return <div className="panel-heading"><div><span>{kicker}</span><h2>{title}</h2></div><small>{aside}</small></div>;
 }
 
-function DataNote({ label = "Reference curve shown while live venue contracts are matched." }: { label?: string }) {
+function DataNote({ label = "Reference shape anchored to live EFFR; connect a licensed CME FedWatch feed for the production curve." }: { label?: string }) {
   return <div className="data-note"><span>◌</span>{label}</div>;
 }
 

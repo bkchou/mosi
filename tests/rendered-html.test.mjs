@@ -20,7 +20,8 @@ test("server-renders the Fed dashboard", async () => {
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /Where rates go next\./);
-  assert.match(html, /Market-implied policy path/);
+  assert.match(html, /Market-implied policy graph/);
+  assert.match(html, /Official agency calendar/);
   assert.match(html, /Inflation, from every angle/);
   assert.doesNotMatch(html, /codex-preview|Building your site|react-loading-skeleton/);
 });
