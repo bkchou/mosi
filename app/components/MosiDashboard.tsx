@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { buildConsensus, fitDatedForecast, percentagesToTenths, timePosition } from "../lib/marketMath";
 
 type Screen = "fed" | "models";
 type Venue = "CME" | "Polymarket" | "Kalshi" | "Pascal";
@@ -19,7 +20,8 @@ type MarketQuote = {
 
 type Outcome = { label: string; probability: number; quote: MarketQuote };
 type Decision = { label: string; meetingDate: string | null; venues: Array<{ venue: MarketQuote["venue"]; outcomes: Outcome[] }> };
-type InflationMetric = { label: string; value: number; priorValue: number; delta: number; period: string; seriesId: string; source: string; sourceUrl: string; nextEstimate: number | null; nextEstimatePeriod: string | null; nextEstimateSource: string | null };
+type InflationPoint = { period: string; value: number };
+type InflationMetric = { label: string; value: number; priorValue: number; delta: number; period: string; seriesId: string; source: string; sourceUrl: string; nextEstimate: number | null; nextEstimatePeriod: string | null; nextEstimateSource: string | null; history: InflationPoint[] };
 type VenueStatus = { venue: Venue; status: "live" | "unavailable" | "no_active_market" | "credential_required"; sourceUrl: string; note?: string };
 type Release = { label: string; releaseAt: string; source: string; sourceUrl: string };
 type Forecast = { company: string; model: string; color: string; source: string; sourceUrl: string; status: string; points: MarketQuote[] };
@@ -33,13 +35,6 @@ type DashboardData = {
     releases: Release[];
   };
   ai: { forecasts: Forecast[]; evidence: MarketQuote[] };
-};
-
-const venueColors: Record<Venue, string> = {
-  CME: "#fd7958",
-  Polymarket: "#6083ff",
-  Kalshi: "#15aa73",
-  Pascal: "#a479ff",
 };
 
 const outcomeOrder = ["Cut 50+ bp", "Cut 25 bp", "No change", "Hike 25 bp", "Hike 50+ bp"];
@@ -92,24 +87,23 @@ export function MosiDashboard({ screen }: { screen: Screen }) {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <a className="brand" href="/" aria-label="MOSI home"><span className="brand-mark" aria-hidden="true"><i /><i /><i /></span><span>MOSI</span></a>
+        <a className="brand" href="/" aria-label="Monitoring the Situation home"><span className="brand-wordmark"><span><b>Mo</b>nitoring</span><small>-the-</small><span><b>Si</b>tuation</span></span></a>
         <nav className="primary-nav" aria-label="Primary navigation">
           <a className={screen === "fed" ? "active" : ""} href="/">The Fed</a>
           <a className={screen === "models" ? "active" : ""} href="/ai-models">AI Models</a>
         </nav>
-        <button className="status-pill" type="button" onClick={() => void refresh()} title="Refresh live data" aria-label={loading ? "Data syncing" : error ? "Data unavailable. Retry" : "Live data. Refresh"}>
+        <button className="status-pill" type="button" onClick={() => void refresh()} title={data ? `Live data updated ${fmtTime(data.generatedAt)}. Click to refresh.` : "Refresh live data"} aria-label={loading ? "Data syncing" : error ? "Data unavailable. Retry" : "Live data. Refresh"}>
           <span className={`pulse ${loading ? "amber" : error ? "red" : ""}`} />{loading ? "Syncing" : error ? "Retry" : "Live"}
         </button>
       </header>
 
-      <main>
+      <main className={screen === "fed" ? "fed-main" : "models-main"}>
         <section className="hero-row">
           <div>
             <p className="eyebrow">{screen === "fed" ? "MONETARY POLICY" : "FRONTIER MODEL RELEASES"}</p>
             <h1>{screen === "fed" ? "Where rates go next." : "When the next models land."}</h1>
             <p className="dek">{screen === "fed" ? "Live meeting-outcome probabilities from public prediction markets, alongside the inflation data policymakers are reacting to." : "Dated prediction-market contracts on one calendar. Every point is a quoted probability—not a generated estimate."}</p>
           </div>
-          <div className="update-block"><span>DATA SNAPSHOT</span><strong>{data ? fmtTime(data.generatedAt) : loading ? "Connecting…" : "Unavailable"}</strong></div>
         </section>
 
         {error && !data ? <EmptyState title="Live data is unavailable" detail={`${error}. No cached or synthetic values are being shown.`} /> : screen === "fed" ? <FedScreen data={data?.fed ?? null} loading={loading} /> : <ModelsScreen data={data?.ai ?? null} generatedAt={data?.generatedAt ?? null} loading={loading} />}
@@ -122,45 +116,43 @@ export function MosiDashboard({ screen }: { screen: Screen }) {
 function FedScreen({ data, loading }: { data: DashboardData["fed"] | null; loading: boolean }) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const decision = data?.decisions[selectedIndex] ?? data?.decisions[0] ?? null;
-  const primaryVenue = decision?.venues.find((item) => item.venue === "Polymarket") ?? decision?.venues[0];
-  const topOutcome = primaryVenue?.outcomes.reduce<Outcome | null>((best, item) => !best || item.probability > best.probability ? item : best, null) ?? null;
-  const liveVenueCount = data?.venues.filter((venue) => venue.status === "live").length ?? 0;
+  const { eligibleVenues: independentVenues, outcomes: consensus } = useMemo(() => buildConsensus(decision?.venues ?? [], outcomeOrder), [decision]);
+  const displayedConsensus = useMemo(() => {
+    const displayMeans = percentagesToTenths(consensus.map((outcome) => outcome.mean));
+    return consensus.map((outcome, index) => ({ ...outcome, displayMean: displayMeans[index] }));
+  }, [consensus]);
+  const topOutcome = consensus.reduce<(typeof consensus)[number] | null>((best, item) => item.mean != null && (!best || best.mean == null || item.mean > best.mean) ? item : best, null);
+  const independentVenueCount = independentVenues.length;
 
   return (
     <>
       <section className="signal-strip" aria-label="Current monetary policy summary">
         <div><span>Effective fed funds rate</span><strong>{data?.effectiveRate?.value == null ? "—" : `${data.effectiveRate.value.toFixed(2)}%`}</strong><small>{data?.effectiveRate ? `NY FED · ${data.effectiveRate.period}` : "Source unavailable"}</small></div>
         <div><span>Next tracked decision</span><strong>{decision ? fmtDate(decision.meetingDate, { month: "short", day: "numeric", timeZone: "UTC" }) : "—"}</strong><small>{decision?.label ?? "No active decision market"}</small></div>
-        <div><span>{primaryVenue?.venue ?? "Market"} top outcome</span><strong className="accent">{topOutcome?.label ?? "—"}</strong><small>{topOutcome ? `${pct(topOutcome.probability)} quoted probability` : "No quote"}</small></div>
-        <div><span>Public feeds connected</span><strong>{data ? `${liveVenueCount} live` : "—"}</strong><small>{data ? "Pascal mirrors Polymarket" : "Checking sources"}</small></div>
+        <div><span>Top consensus outcome</span><strong className="accent">{topOutcome?.label ?? "—"}</strong><small>{topOutcome?.mean == null ? "No quote" : `${pct(topOutcome.mean)} equal-weight mean`}</small></div>
+        <div><span>Independent sources</span><strong>{decision ? independentVenueCount : "—"}</strong><small>{decision ? independentVenueCount ? independentVenues.map((venue) => venue.venue).join(" + ") : "No complete venue" : "Checking sources"}</small></div>
       </section>
 
-      <section className="dashboard-grid fed-grid">
+      <section className="dashboard-grid fed-one-screen-grid">
         <article className="panel path-panel">
-          <PanelHeading kicker="MEETING OUTCOMES" title="Observed decision probability graph" aside="Live venue quotes · not a modeled curve" />
+          <PanelHeading kicker="MEETING OUTCOMES" title="Consensus probability graph" aside="Venue midpoints normalized to 100%" />
           {data?.decisions.length ? <>
             <div className="decision-tabs" role="tablist" aria-label="Fed meeting">
               {data.decisions.map((item, index) => <button key={item.label} type="button" className={index === selectedIndex ? "active" : ""} onClick={() => setSelectedIndex(index)}>{item.label}<small>{fmtDate(item.meetingDate, { month: "short", day: "numeric", timeZone: "UTC" })}</small></button>)}
             </div>
-            {decision && <DecisionGraph decision={decision} />}
+            <ConsensusGraph outcomes={displayedConsensus} />
           </> : <EmptyState title={loading ? "Syncing decision markets…" : "No active Fed decision contracts found"} detail="No substitute probabilities are shown." compact />}
+          <div className="source-ribbon"><span><i className={independentVenueCount ? "live-dot" : "muted-dot"} /> {independentVenueCount ? `${independentVenues.map((venue) => venue.venue).join(" + ")} eligible` : "No complete independent venue"}</span><span>Each eligible venue normalized before averaging</span><span>Pascal mirror · CME licensed</span></div>
         </article>
 
-        <article className="panel venue-panel">
-          <PanelHeading kicker="SOURCE STATUS" title="What is actually connected" aside="No simulated venue data" />
-          <div className="venue-status-list">
-            {(data?.venues ?? []).map((venue) => <VenueStatusRow item={venue} decision={decision} key={venue.venue} />)}
-            {!data && <EmptyState title="Checking sources…" compact />}
+        <article className="panel inflation-compact-panel">
+          <PanelHeading kicker="LAGGING INDICATORS" title="Inflation history + gauges" aside="36-month window · year over year" />
+          {!!data?.inflation.length && <InflationHistory metrics={data.inflation} />}
+          <div className="inflation-compact-grid">
+            {(data?.inflation ?? []).map((metric) => <InflationCard metric={metric} key={metric.seriesId} />)}
           </div>
+          {!data?.inflation.length && <EmptyState title={loading ? "Syncing inflation…" : "Inflation observations unavailable"} detail="No substitute values are shown." compact />}
         </article>
-      </section>
-
-      <section className="inflation-section">
-        <PanelHeading kicker="LAGGING INDICATORS" title="Inflation, from every angle" aside="Latest vs previous published observation" />
-        <div className="inflation-grid">
-          {(data?.inflation ?? []).map((metric) => <InflationCard metric={metric} key={metric.seriesId} />)}
-        </div>
-        {!data?.inflation.length && <EmptyState title={loading ? "Syncing FRED observations…" : "Inflation observations unavailable"} detail="No substitute values are shown." compact />}
       </section>
 
       {!!data?.releases.length && <section className="release-tape" aria-label="Upcoming inflation releases">
@@ -171,37 +163,60 @@ function FedScreen({ data, loading }: { data: DashboardData["fed"] | null; loadi
   );
 }
 
-function DecisionGraph({ decision }: { decision: Decision }) {
-  return <div className="decision-graph" role="img" aria-label={`${decision.label} probabilities by venue`}>
-    <div className="outcome-axis"><span />{outcomeOrder.map((label) => <span key={label}>{label.replace(" bp", "")}</span>)}</div>
-    {decision.venues.map((venue) => <div className="outcome-row" key={venue.venue}>
-      <div className="outcome-venue"><i style={{ background: venueColors[venue.venue] }} />{venue.venue}</div>
-      {outcomeOrder.map((label) => {
-        const outcome = venue.outcomes.find((item) => item.label === label);
-        return <a className="outcome-cell" key={label} href={outcome?.quote.url} target="_blank" rel="noreferrer" aria-label={outcome ? `${venue.venue} ${label}: ${pct(outcome.probability)}` : `${venue.venue} ${label}: unavailable`}>
-          <span style={{ height: `${Math.max(outcome?.probability ?? 0, 1)}%` }} />
-          <strong>{outcome ? pct(outcome.probability) : "—"}</strong>
-        </a>;
+const inflationGraphColors: Record<string, string> = {
+  CPIAUCNS: "#f16645",
+  CPILFENS: "#a9472f",
+  PCEPI: "#497ad8",
+  PCEPILFE: "#7553a6",
+  PCETRIM12M159SFRBDAL: "#0c9b65",
+};
+
+function InflationHistory({ metrics }: { metrics: InflationMetric[] }) {
+  const series = metrics.filter((metric) => inflationGraphColors[metric.seriesId] && metric.history.length > 1);
+  const points = series.flatMap((metric) => metric.history.map((point) => ({ ...point, timestamp: new Date(`${point.period}T00:00:00Z`).getTime() })));
+  if (!points.length) return null;
+  const start = Math.min(...points.map((point) => point.timestamp));
+  const end = Math.max(...points.map((point) => point.timestamp));
+  const values = points.map((point) => point.value);
+  const yMin = Math.min(0, Math.floor(Math.min(...values)));
+  const yMax = Math.max(yMin + 1, Math.ceil(Math.max(...values)));
+  const plot = { left: 42, right: 612, top: 12, bottom: 142 };
+  const x = (timestamp: number) => plot.left + ((timestamp - start) / Math.max(1, end - start)) * (plot.right - plot.left);
+  const y = (value: number) => plot.bottom - ((value - yMin) / (yMax - yMin)) * (plot.bottom - plot.top);
+  const ticks = Array.from({ length: yMax - yMin + 1 }, (_, index) => yMin + index).filter((_, index, all) => all.length <= 6 || index % 2 === 0);
+  const monthTicks: number[] = [];
+  const cursor = new Date(start); cursor.setUTCMonth(cursor.getUTCMonth() + 1, 1); cursor.setUTCHours(0, 0, 0, 0);
+  while (cursor.getTime() <= end) { if (cursor.getUTCMonth() === 0 || cursor.getUTCMonth() === 6) monthTicks.push(cursor.getTime()); cursor.setUTCMonth(cursor.getUTCMonth() + 1); }
+  return <div className="inflation-history">
+    <svg viewBox="0 0 624 166" role="img" aria-label="Historical year-over-year inflation rates over the last 36 months">
+      {ticks.map((tick) => <g className="inflation-y-tick" key={tick}><line x1={plot.left} x2={plot.right} y1={y(tick)} y2={y(tick)} /><text x={plot.left - 8} y={y(tick) + 3}>{tick}%</text></g>)}
+      {monthTicks.map((tick) => <g className="inflation-x-tick" key={tick}><line x1={x(tick)} x2={x(tick)} y1={plot.top} y2={plot.bottom} /><text x={x(tick)} y="158">{fmtDate(new Date(tick).toISOString(), { month: "short", year: new Date(tick).getUTCMonth() === 0 ? "2-digit" : undefined, timeZone: "UTC" }).toUpperCase()}</text></g>)}
+      {series.map((metric) => {
+        const path = metric.history.map((point, index) => `${index ? "L" : "M"}${x(new Date(`${point.period}T00:00:00Z`).getTime()).toFixed(1)},${y(point.value).toFixed(1)}`).join(" ");
+        const latest = metric.history.at(-1)!;
+        return <g className="inflation-series" style={{ color: inflationGraphColors[metric.seriesId] }} key={metric.seriesId}>
+          <path d={path} />
+          {metric.history.map((point) => <circle cx={x(new Date(`${point.period}T00:00:00Z`).getTime())} cy={y(point.value)} r="5" key={point.period}><title>{metric.label} · {fmtDate(`${point.period}T00:00:00Z`, { month: "long", year: "numeric", timeZone: "UTC" })}: {point.value.toFixed(2)}%</title></circle>)}
+          <circle className="latest-point" cx={x(new Date(`${latest.period}T00:00:00Z`).getTime())} cy={y(latest.value)} r="3" />
+        </g>;
       })}
-    </div>)}
-    <div className="graph-caption"><span>0%</span><strong>Bar height = quoted YES probability</strong><span>100%</span></div>
+    </svg>
+    <div className="inflation-legend">{series.map((metric) => <a href={metric.sourceUrl} target="_blank" rel="noreferrer" key={metric.seriesId}><i style={{ background: inflationGraphColors[metric.seriesId] }} /><span>{metric.label}</span><strong>{metric.value.toFixed(1)}%</strong></a>)}</div>
   </div>;
 }
 
-function VenueStatusRow({ item, decision }: { item: VenueStatus; decision: Decision | null }) {
-  const venueData = decision?.venues.find((venue) => venue.venue === item.venue);
-  const top = venueData?.outcomes.reduce<Outcome | null>((best, outcome) => !best || outcome.probability > best.probability ? outcome : best, null) ?? null;
-  const statusLabel = item.status === "live" ? "LIVE QUOTES" : item.status === "credential_required" ? "LICENSED FEED NEEDED" : item.status === "no_active_market" ? "NO MATCHED ACTIVE MARKET" : "UNAVAILABLE";
-  return <a className="venue-status-row" href={top?.quote.url ?? item.sourceUrl} target="_blank" rel="noreferrer">
-    <span className="venue-mark" style={{ background: venueColors[item.venue] }}>{item.venue[0]}</span>
-    <span className="market-copy"><strong>{item.venue}</strong><span>{top ? top.label : statusLabel}</span><small>{item.note ? `${item.note} · ` : ""}{top ? `${top.quote.quoteKind} · ${top.quote.volumeLabel}` : "No probability displayed"}</small></span>
-    <span className="market-prob"><strong>{top ? pct(top.probability) : "—"}</strong><small>{item.status === "live" ? "TOP" : "STATUS"}</small></span><span className="arrow">↗</span>
-  </a>;
+function ConsensusGraph({ outcomes }: { outcomes: Array<{ label: string; mean: number | null; displayMean: number | null; low: number | null; high: number | null; sourceCount: number }> }) {
+  return <div className="consensus-graph" role="img" aria-label="Equal-weight mean of normalized Polymarket and Kalshi Fed decision probabilities">
+    {outcomes.map((outcome) => <div className="consensus-column" key={outcome.label}>
+      <div className="consensus-plot"><span style={{ height: `${Math.max(outcome.mean ?? 0, 1)}%` }} /><strong>{outcome.displayMean == null ? "—" : `${outcome.displayMean.toFixed(1)}%`}</strong></div>
+      <div className="consensus-label"><strong>{outcome.label}</strong><small>{outcome.low == null || outcome.high == null ? "No quote" : outcome.sourceCount > 1 ? `${pct(outcome.low)}–${pct(outcome.high)} range` : "1 source"}</small></div>
+    </div>)}
+  </div>;
 }
 
 function InflationCard({ metric }: { metric: InflationMetric }) {
   const direction = Math.abs(metric.delta) < .05 ? "flat" : metric.delta > 0 ? "up" : "down";
-  return <a className="metric-card" href={metric.sourceUrl} target="_blank" rel="noreferrer">
+  return <a className="metric-card" href={metric.sourceUrl} target="_blank" rel="noreferrer" title={`${metric.source} · ${metric.seriesId}`}>
     <div><span>{metric.label}</span><small>{fmtDate(`${metric.period}T00:00:00Z`, { month: "short", year: "numeric", timeZone: "UTC" })}</small></div>
     <strong>{metric.value.toFixed(1)}%</strong>
     <p className={direction}>{metric.delta >= 0 ? "+" : ""}{metric.delta.toFixed(1)} pp <span>vs prior</span></p>
@@ -210,11 +225,27 @@ function InflationCard({ metric }: { metric: InflationMetric }) {
   </a>;
 }
 
+type FittedForecast = Forecast & {
+  median: number;
+  q10: number;
+  q25: number;
+  q75: number | null;
+  q90: number | null;
+  venueCount: number;
+  marketCount: number;
+};
+
+function fitForecast(forecast: Forecast): FittedForecast | null {
+  const fit = fitDatedForecast(forecast.points);
+  return fit ? { ...forecast, ...fit, source: fit.venues.join(" + ") } : null;
+}
+
 function ModelsScreen({ data, generatedAt, loading }: { data: DashboardData["ai"] | null; generatedAt: string | null; loading: boolean }) {
   const forecasts = useMemo(() => data?.forecasts ?? [], [data?.forecasts]);
-  const crossing = useMemo(() => forecasts.flatMap((forecast) => forecast.points.filter((point) => point.deadline && point.probability >= 50).map((point) => ({ ...point, company: forecast.company, model: forecast.model }))).sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime())[0], [forecasts]);
+  const fitted = useMemo(() => forecasts.map(fitForecast).filter((forecast): forecast is FittedForecast => forecast != null).sort((a, b) => a.median - b.median), [forecasts]);
+  const earliest = fitted[0];
   const bounds = useMemo(() => {
-    const dates = forecasts.flatMap((forecast) => forecast.points.map((point) => point.deadline ? new Date(point.deadline).getTime() : NaN)).filter(Number.isFinite);
+    const dates = fitted.flatMap((forecast) => [forecast.q10, forecast.q90, forecast.median, ...forecast.points.map((point) => point.deadline ? new Date(point.deadline).getTime() : NaN)]).filter((value): value is number => value != null && Number.isFinite(value));
     const currentMonth = new Date(); currentMonth.setUTCDate(1); currentMonth.setUTCHours(0, 0, 0, 0);
     const fiveMonthsOut = new Date(currentMonth); fiveMonthsOut.setUTCMonth(fiveMonthsOut.getUTCMonth() + 5);
     const minDate = dates.length ? Math.min(...dates) : currentMonth.getTime();
@@ -222,7 +253,7 @@ function ModelsScreen({ data, generatedAt, loading }: { data: DashboardData["ai"
     const start = new Date(minDate); start.setUTCDate(1); start.setUTCHours(0, 0, 0, 0);
     const end = new Date(maxDate); end.setUTCMonth(end.getUTCMonth() + 1, 1); end.setUTCHours(0, 0, 0, 0);
     return { start: start.getTime(), end: end.getTime() };
-  }, [forecasts]);
+  }, [fitted]);
   const months = useMemo(() => {
     const values: number[] = [];
     const cursor = new Date(bounds.start);
@@ -232,54 +263,43 @@ function ModelsScreen({ data, generatedAt, loading }: { data: DashboardData["ai"
 
   return <>
     <section className="model-summary">
-      <div className="summary-copy"><span className="label">EARLIEST TRADED DEADLINE ≥50%</span><strong>{crossing?.deadline ? fmtDate(crossing.deadline, { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" }) : "Not available"}</strong><p>{crossing ? `${crossing.model} is quoted at ${pct(crossing.probability)} to release by this deadline on ${crossing.venue}.` : "No active contract in the current set crosses 50%."}</p></div>
-      <div className="confidence-key"><span><i className="point" /> Market quote</span><span><i className="line" /> Deadline curve</span></div>
+      <div className="summary-copy"><span className="label">EARLIEST 50% IMPLIED DATE</span><strong>{earliest ? fmtDate(new Date(earliest.median).toISOString(), { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" }) : "Not available"}</strong><p>{earliest ? `${earliest.model}, derived from ${earliest.marketCount} live deadline contracts across ${earliest.venueCount} venue${earliest.venueCount === 1 ? "" : "s"}.` : "No release series currently reaches 50% across its active dated contracts."}</p></div>
+      <div className="confidence-key"><span><i className="inner" /> 50% band</span><span><i className="outer" /> 80% band</span><span><i className="median" /> 50% date</span></div>
     </section>
 
     <article className="panel calendar-panel">
-      <PanelHeading kicker="SHARED CALENDAR" title="Dated model-release probability graphs" aside={generatedAt ? `Snapshot ${fmtTime(generatedAt)}` : "Live public contracts"} />
+      <PanelHeading kicker="SHARED CALENDAR" title="Expected model releases" aside={generatedAt ? `Deadline CDF · ${fmtTime(generatedAt)}` : "Live public contracts"} />
       <div className="calendar-wrap">
-        <div className="calendar-axis"><span className="axis-spacer" /><div>{months.map((month) => <span key={month}>{fmtDate(new Date(month).toISOString(), { month: "short", year: month === months[0] ? "2-digit" : undefined, timeZone: "UTC" }).toUpperCase()}</span>)}</div><span>LAST</span></div>
-        {forecasts.map((forecast) => <ReleaseCurve forecast={forecast} bounds={bounds} months={months} key={`${forecast.company}-${forecast.model}`} />)}
-        {!forecasts.length && <EmptyState title={loading ? "Syncing dated contracts…" : "No active dated release contracts found"} detail="No generated release windows are shown." compact />}
+        <TimelineAxis bounds={bounds} months={months} />
+        {fitted.map((forecast) => <ForecastBand forecast={forecast} bounds={bounds} months={months} key={`${forecast.company}-${forecast.model}`} />)}
+        {!fitted.length && <EmptyState title={loading ? "Fitting dated contracts…" : "No model has enough active dated contracts"} detail="At least two release-by markets are required; no fallback window is shown." compact />}
       </div>
-      <div className="calendar-foot"><span>Every row uses the same date axis and 0–100% vertical scale.</span><span><i className="point" /> quoted YES value</span><span><i className="line" /> cumulative deadline curve</span></div>
+      <div className="calendar-foot"><span>Only venues reaching 50% are fitted and equally weighted; unresolved tails stay open-ended.</span><span><i className="outer" /> 80%</span><span><i className="inner" /> 50%</span><span><i className="median" /> 50% date</span></div>
     </article>
 
-    <section className="panel evidence-panel">
-      <PanelHeading kicker="UNDERLYING CONTRACTS" title="What the markets are actually trading" aside={`${data?.evidence.length ?? 0} sourced quotes`} />
-      <div className="evidence-grid">{(data?.evidence ?? []).slice(0, 16).map((market, index) => <MarketRow market={market} key={`${market.venue}-${market.title}-${index}`} />)}</div>
-      {!data?.evidence.length && <EmptyState title="No contract quotes available" compact />}
-    </section>
   </>;
 }
 
-function ReleaseCurve({ forecast, bounds, months }: { forecast: Forecast; bounds: { start: number; end: number }; months: number[] }) {
-  const width = 1000;
-  const height = 76;
-  const points = forecast.points.filter((point) => point.deadline).map((point) => ({ quote: point, x: ((new Date(point.deadline!).getTime() - bounds.start) / (bounds.end - bounds.start)) * width, y: height - 8 - (point.probability / 100) * (height - 16) }));
-  const last = forecast.points.at(-1);
-  const crossing = forecast.points.find((point) => point.probability >= 50);
-  return <div className={`calendar-row ${forecast.color}`}>
-    <a className="calendar-label" href={forecast.sourceUrl} target="_blank" rel="noreferrer"><span>{forecast.company}</span><strong>{forecast.model}</strong><small>{crossing?.deadline ? `≥50% by ${fmtDate(crossing.deadline, { month: "short", day: "numeric", timeZone: "UTC" })}` : "No ≥50% deadline"}</small></a>
-    <div className="calendar-track" aria-label={`${forecast.model} release-by probabilities from ${forecast.source}`}>
-      <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" aria-hidden="true">
-        {months.map((month) => <line x1={((month - bounds.start) / (bounds.end - bounds.start)) * width} x2={((month - bounds.start) / (bounds.end - bounds.start)) * width} y1="0" y2={height} className="month-grid" key={month} />)}
-        <line x1="0" x2={width} y1={height / 2} y2={height / 2} className="fifty-line" />
-        {points.length > 1 && <polyline points={points.map((point) => `${point.x},${point.y}`).join(" ")} className="release-line" />}
-        {points.map((point) => <g key={`${point.quote.title}-${point.x}`}><circle cx={point.x} cy={point.y} r="5" className="release-point" /><text x={Math.min(point.x + 9, width - 48)} y={Math.max(point.y - 6, 10)}>{pct(point.quote.probability)}</text></g>)}
-      </svg>
-    </div>
-    <div className="calendar-score"><strong>{last ? pct(last.probability) : "—"}</strong><span>{last?.deadline ? `BY ${fmtDate(last.deadline, { month: "short", day: "numeric", timeZone: "UTC" })}` : "NO QUOTE"}</span></div>
-  </div>;
+function TimelineAxis({ bounds, months }: { bounds: { start: number; end: number }; months: number[] }) {
+  return <div className="calendar-axis"><span className="axis-spacer" /><div className="timeline-axis">{months.map((month, index) => <span className={index === 0 ? "first" : index === months.length - 1 ? "last" : ""} style={{ left: `${timePosition(month, bounds)}%` }} key={month}>{fmtDate(new Date(month).toISOString(), { month: "short", year: index === 0 || new Date(month).getUTCMonth() === 0 ? "2-digit" : undefined, timeZone: "UTC" }).toUpperCase()}</span>)}</div><span>FIT</span></div>;
 }
 
-function MarketRow({ market }: { market: MarketQuote }) {
-  return <a className="market-row" href={market.url} target="_blank" rel="noreferrer">
-    <span className="venue-mark" style={{ background: venueColors[market.venue] }}>{market.venue[0]}</span>
-    <span className="market-copy"><strong>{market.venue}</strong><span>{market.title}</span><small>{market.quoteKind} · {market.volumeLabel}{market.deadline ? ` · ${fmtDate(market.deadline, { month: "short", day: "numeric", timeZone: "UTC" })}` : ""}</small></span>
-    <span className="market-prob"><strong>{pct(market.probability)}</strong><small>YES</small></span><span className="arrow">↗</span>
-  </a>;
+function ForecastBand({ forecast, bounds, months }: { forecast: FittedForecast; bounds: { start: number; end: number }; months: number[] }) {
+  const outerLeft = timePosition(forecast.q10, bounds);
+  const outerRight = forecast.q90 == null ? 100 : timePosition(forecast.q90, bounds);
+  const innerLeft = timePosition(forecast.q25, bounds);
+  const innerRight = forecast.q75 == null ? 100 : timePosition(forecast.q75, bounds);
+  const median = timePosition(forecast.median, bounds);
+  return <div className={`calendar-row ${forecast.color}`}>
+    <a className="calendar-label" href={forecast.sourceUrl} target="_blank" rel="noreferrer"><span>{forecast.company}</span><strong>{forecast.model}</strong><small>{forecast.source} · {forecast.marketCount} markets</small></a>
+    <div className="calendar-track" aria-label={`${forecast.model}: 50 percent implied date ${fmtDate(new Date(forecast.median).toISOString())}; ${forecast.q75 == null || forecast.q90 == null ? "one or more confidence intervals remain open-ended" : "central 50 percent and 80 percent release intervals"}`}>
+      {months.map((month) => <i className="month-rule" style={{ left: `${timePosition(month, bounds)}%` }} key={month} />)}
+      <div className={`calendar-outer ${forecast.q90 == null ? "open-ended" : ""}`} style={{ left: `${outerLeft}%`, width: `${outerRight - outerLeft}%` }} />
+      <div className={`calendar-inner ${forecast.q75 == null ? "open-ended" : ""}`} style={{ left: `${innerLeft}%`, width: `${innerRight - innerLeft}%` }} />
+      <div className="calendar-median" style={{ left: `${median}%` }}><span>{fmtDate(new Date(forecast.median).toISOString(), { month: "short", day: "numeric", timeZone: "UTC" })}</span></div>
+    </div>
+    <div className="calendar-score"><strong>{forecast.venueCount}</strong><span>VENUE{forecast.venueCount === 1 ? "" : "S"}</span></div>
+  </div>;
 }
 
 function PanelHeading({ kicker, title, aside }: { kicker: string; title: string; aside: string }) {

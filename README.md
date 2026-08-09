@@ -4,8 +4,8 @@
 
 The first two screens cover:
 
-- **The Fed** — exact meeting-outcome quotes from Polymarket, Kalshi, and Pascal, plus official EFFR and inflation observations.
-- **AI Models** — cumulative release-by probabilities for upcoming frontier models on one shared calendar.
+- **The Fed** — a compact consensus distribution from normalized Polymarket and Kalshi meeting outcomes, plus official EFFR and inflation observations.
+- **AI Models** — market-implied 50% dates and central 50%/80% release intervals fitted from multiple dated contracts for each model on one shared calendar; unsupported tails remain open-ended.
 
 ## Data sources
 

@@ -35,8 +35,11 @@ const inflationSeries = [
 const aiEvents = [
   { company: "OpenAI", model: "GPT-6", query: "GPT-6", slug: "gpt-6-released-by", color: "green" },
   { company: "Anthropic", model: "Next Claude Opus", query: "Claude release", slug: "next-claude-opus-released-byptptpt-20260727142323912", color: "coral" },
+  { company: "Anthropic", model: "Next Claude Sonnet", query: "Claude release", slug: "next-claude-sonnet-released-byptptpt-20260701203831153", color: "coral" },
+  { company: "Anthropic", model: "Next Claude Haiku", query: "Claude release", slug: "next-claude-haiku-released-byptptpt-20260701205353326", color: "coral" },
   { company: "Google", model: "Gemini 4.0", query: "Gemini release", slug: "gemini-4pt0-released-by-june-30-2026", color: "blue" },
   { company: "xAI", model: "Grok 5", query: "Grok release", slug: "grok-5-released-byptptpt-20260710195520919", color: "mono" },
+  { company: "xAI", model: "Grok 4.6", query: "Grok release", slug: "grok-4pt6-released-byptptpt-20260804192931960", color: "mono" },
 ] as const;
 
 function record(value: unknown): JsonRecord {
@@ -58,11 +61,11 @@ function finiteNumber(value: unknown): number | null {
 }
 
 function kalshiProbability(market: JsonRecord) {
-  const last = finiteNumber(market.last_price_dollars);
-  if (last != null) return { probability: last * 100, quoteKind: "last trade" };
   const bid = finiteNumber(market.yes_bid_dollars);
   const ask = finiteNumber(market.yes_ask_dollars);
   if (bid != null && ask != null) return { probability: ((bid + ask) / 2) * 100, quoteKind: "bid/ask midpoint" };
+  const last = finiteNumber(market.last_price_dollars);
+  if (last != null) return { probability: last * 100, quoteKind: "last trade" };
   return null;
 }
 
@@ -258,43 +261,49 @@ async function inflationMetrics(nowcasts: Map<string, { value: number; period: s
   if (!response.ok) throw new Error(`FRED inflation batch: ${response.status}`);
   const csv = (await response.text()).trim().split(/\r?\n/).map((line) => line.split(","));
   const header = csv[0];
-  return inflationSeries.flatMap((series) => {
+  const metrics = inflationSeries.flatMap((series) => {
     const column = header.indexOf(series.id);
     if (column < 0) return [];
     const rows = csv.slice(1).map((row) => [row[0], row[column]]).filter((row) => row[0] && finiteNumber(row[1]) != null);
-    const latest = rows.at(-1);
-    const prior = rows.at(-2);
+    const rowValues = new Map(rows.map(([period, rawValue]) => [period, finiteNumber(rawValue)!]));
+    const history = rows.flatMap(([period, rawValue]) => {
+      const observation = finiteNumber(rawValue);
+      if (observation == null) return [];
+      if (series.kind === "rate") return [{ period, value: observation }];
+      const date = new Date(`${period}T00:00:00Z`);
+      date.setUTCFullYear(date.getUTCFullYear() - 1);
+      const yearAgo = rowValues.get(date.toISOString().slice(0, 10));
+      return yearAgo == null || yearAgo === 0 ? [] : [{ period, value: (observation / yearAgo - 1) * 100 }];
+    });
+    const latest = history.at(-1);
+    const prior = history.at(-2);
     if (!latest || !prior) return [];
-    let value = finiteNumber(latest[1])!;
-    let priorValue = finiteNumber(prior[1])!;
-    if (series.kind === "index") {
-      const latestDate = new Date(`${latest[0]}T00:00:00Z`);
-      const priorDate = new Date(`${prior[0]}T00:00:00Z`);
-      latestDate.setUTCFullYear(latestDate.getUTCFullYear() - 1);
-      priorDate.setUTCFullYear(priorDate.getUTCFullYear() - 1);
-      const yearAgo = finiteNumber(rows.find((row) => row[0] === latestDate.toISOString().slice(0, 10))?.[1]);
-      const priorYearAgo = finiteNumber(rows.find((row) => row[0] === priorDate.toISOString().slice(0, 10))?.[1]);
-      if (yearAgo == null || priorYearAgo == null) return [];
-      value = (value / yearAgo - 1) * 100;
-      priorValue = (priorValue / priorYearAgo - 1) * 100;
-    }
+    const value = latest.value;
+    const priorValue = prior.value;
     const nowcastKey = series.label.replace(" · 1m ann.", "");
     const candidateNowcast = nowcasts.get(nowcastKey);
-    const nowcast = candidateNowcast && candidateNowcast.period > latest[0] ? candidateNowcast : undefined;
+    const nowcast = candidateNowcast && candidateNowcast.period > latest.period ? candidateNowcast : undefined;
     return [{
       label: series.label,
       value,
       priorValue,
       delta: value - priorValue,
-      period: latest[0],
+      period: latest.period,
       seriesId: series.id,
       source: `${series.publisher} via FRED`,
       sourceUrl: `https://fred.stlouisfed.org/series/${series.id}`,
       nextEstimate: nowcast?.value ?? null,
       nextEstimatePeriod: nowcast?.period ?? null,
       nextEstimateSource: nowcast ? "Cleveland Fed nowcast" : null,
+      history,
     }];
   });
+  const graphEnd = metrics.map((metric) => metric.history.at(-1)?.period).filter((period): period is string => period != null).sort().at(-1);
+  if (!graphEnd) return metrics;
+  const cutoff = new Date(`${graphEnd}T00:00:00Z`);
+  cutoff.setUTCFullYear(cutoff.getUTCFullYear() - 3);
+  const cutoffPeriod = cutoff.toISOString().slice(0, 10);
+  return metrics.map((metric) => ({ ...metric, history: metric.history.filter((point) => point.period >= cutoffPeriod) }));
 }
 
 async function effectiveRate() {
@@ -348,19 +357,28 @@ async function aiForecasts(pascalMarkets: JsonRecord[]) {
   }));
   const [kalshiGpt, kalshiClaude, kalshiGemini, kalshiGrok] = await Promise.all(["KXGPT", "KXCLAUDE", "KXGEMINI", "KXGROK"].map((series) => kalshiMarkets(series).catch(() => [])));
   const futureQuotes = (rows: JsonRecord[], tickerPattern: RegExp) => rows.filter((market) => tickerPattern.test(stringValue(market.ticker))).map(kalshiQuote).filter((quote): quote is MarketQuote => quote != null && quote.deadline != null && new Date(quote.deadline).getTime() >= Date.now() - 86400000).sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime());
+  const gptPoints = futureQuotes(kalshiGpt, /^KXGPT-OPEN-/);
+  const astraPoints = futureQuotes(kalshiGpt, /^KXGPT-ASTRA-/);
+  const mythosPoints = futureQuotes(kalshiClaude, /^KXCLAUDE-NXTMYTH-/);
   const geminiPoints = futureQuotes(kalshiGemini, /^KXGEMINI-GEMI35P-/);
+  const grok46Points = futureQuotes(kalshiGrok, /^KXGROK-GROK46-/);
+  const grok47Points = futureQuotes(kalshiGrok, /^KXGROK-GROK47-/);
   const grokPoints = futureQuotes(kalshiGrok, /^KXGROK-GROK5-/);
   forecasts = forecasts.map((forecast) => {
-    if (forecast.company === "Google" && geminiPoints.length) return { ...forecast, model: "Gemini 3.5 Pro", source: "Kalshi", sourceUrl: "https://kalshi.com/markets/kxgemini", points: geminiPoints, status: "live" };
-    if (forecast.company === "xAI" && grokPoints.length) return { ...forecast, model: "Grok 5", source: "Kalshi", sourceUrl: "https://kalshi.com/markets/kxgrok", points: grokPoints, status: "live" };
+    if (forecast.company === "OpenAI" && gptPoints.length) return { ...forecast, source: "Polymarket + Kalshi", sourceUrl: "https://polymarket.com/event/gpt-6-released-by", points: [...forecast.points, ...gptPoints].sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime()), status: "live" };
+    if (forecast.company === "xAI" && forecast.model === "Grok 5" && grokPoints.length) return { ...forecast, source: "Polymarket + Kalshi", sourceUrl: "https://kalshi.com/markets/kxgrok", points: [...forecast.points, ...grokPoints].sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime()), status: "live" };
+    if (forecast.company === "xAI" && forecast.model === "Grok 4.6" && grok46Points.length) return { ...forecast, source: "Polymarket + Kalshi", sourceUrl: "https://kalshi.com/markets/kxgrok", points: [...forecast.points, ...grok46Points].sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime()), status: "live" };
     return forecast;
   });
-  const extraKalshi = [
-    ...futureQuotes(kalshiGpt, /^KXGPT-OPEN-/),
-    ...futureQuotes(kalshiClaude, /^KXCLAUDE-(NXTMYTH|MYTH)-/),
-  ];
+  const kalshiOnly = [
+    { company: "OpenAI", model: "Astra", query: "", slug: "", color: "green", source: "Kalshi", sourceUrl: "https://kalshi.com/markets/kxgpt", points: astraPoints, status: astraPoints.length ? "live" : "no_active_market" },
+    { company: "Anthropic", model: "Next Mythos-Class", query: "", slug: "", color: "coral", source: "Kalshi", sourceUrl: "https://kalshi.com/markets/kxclaude", points: mythosPoints, status: mythosPoints.length ? "live" : "no_active_market" },
+    { company: "Google", model: "Gemini 3.5 Pro", query: "", slug: "", color: "blue", source: "Kalshi", sourceUrl: "https://kalshi.com/markets/kxgemini", points: geminiPoints, status: geminiPoints.length ? "live" : "no_active_market" },
+    { company: "xAI", model: "Grok 4.7", query: "", slug: "", color: "mono", source: "Kalshi", sourceUrl: "https://kalshi.com/markets/kxgrok", points: grok47Points, status: grok47Points.length ? "live" : "no_active_market" },
+  ].filter((forecast) => forecast.points.length >= 2);
+  forecasts = [...forecasts, ...kalshiOnly].filter((forecast) => forecast.points.length >= 2).sort((a, b) => a.company.localeCompare(b.company) || a.model.localeCompare(b.model));
   const pascalGpt = pascalMarkets.filter((market) => stringValue(market.symbol).startsWith("GPT6_RELEASED_BY.")).map(pascalQuote).filter((quote): quote is MarketQuote => quote != null && quote.deadline != null && new Date(quote.deadline).getTime() >= Date.now() - 86400000).map((quote) => ({ ...quote, title: `${quote.title} · mirrors Polymarket` })).sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime());
-  return { forecasts, evidence: [...forecasts.flatMap((forecast) => forecast.points), ...extraKalshi, ...pascalGpt] };
+  return { forecasts, evidence: [...forecasts.flatMap((forecast) => forecast.points), ...pascalGpt] };
 }
 
 function combineDecisions(poly: Awaited<ReturnType<typeof polymarketFedDecisions>>, pascal: ReturnType<typeof pascalFedDecisions>, kalshi: Awaited<ReturnType<typeof kalshiFedDecisions>>) {

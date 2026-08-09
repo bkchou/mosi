@@ -20,9 +20,12 @@ test("server-renders the Fed dashboard", async () => {
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /Where rates go next\./);
-  assert.match(html, /Observed decision probability graph/);
-  assert.match(html, /No simulated venue data/);
-  assert.match(html, /Inflation, from every angle/);
+  assert.match(html, /Monitoring/);
+  assert.match(html, /-the-/);
+  assert.match(html, /Situation/);
+  assert.match(html, /Consensus probability graph/);
+  assert.match(html, /Venue midpoints normalized to 100%/);
+  assert.match(html, /Inflation history \+ gauges/);
   assert.doesNotMatch(html, /61%|58%|3 of 4 venues|−51 bp/);
   assert.doesNotMatch(html, /codex-preview|Building your site|react-loading-skeleton/);
 });
@@ -32,8 +35,9 @@ test("server-renders the AI Models screen and production metadata", async () => 
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /When the next models land\./);
-  assert.match(html, /Dated model-release probability graphs/);
-  assert.match(html, /Every row uses the same date axis and 0–100% vertical scale\./);
+  assert.match(html, /Expected model releases/);
+  assert.match(html, /Only venues reaching 50% are fitted/);
+  assert.doesNotMatch(html, /What the markets are actually trading/);
   assert.doesNotMatch(html, /Q1 2027|Reference windows|false precision/);
   assert.match(html, /MOSI/);
   assert.match(html, /og\.png/);
