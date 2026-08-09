@@ -225,27 +225,34 @@ function InflationCard({ metric }: { metric: InflationMetric }) {
   </a>;
 }
 
-type FittedForecast = Forecast & {
-  median: number;
-  q10: number;
-  q25: number;
+type CalendarForecast = Forecast & {
+  median: number | null;
+  q10: number | null;
+  q25: number | null;
   q75: number | null;
   q90: number | null;
+  lastDeadline: number;
   venueCount: number;
   marketCount: number;
 };
 
-function fitForecast(forecast: Forecast): FittedForecast | null {
+function calendarForecast(forecast: Forecast): CalendarForecast | null {
+  const futurePoints = forecast.points.filter((point) => point.deadline && new Date(point.deadline).getTime() > Date.now());
+  if (futurePoints.length < 2) return null;
+  const lastDeadline = Math.max(...futurePoints.map((point) => new Date(point.deadline!).getTime()));
   const fit = fitDatedForecast(forecast.points);
-  return fit ? { ...forecast, ...fit, source: fit.venues.join(" + ") } : null;
+  if (fit) return { ...forecast, ...fit, lastDeadline, source: fit.venues.join(" + ") };
+  const venues = [...new Set(futurePoints.map((point) => point.venue))];
+  return { ...forecast, median: null, q10: null, q25: null, q75: null, q90: null, lastDeadline, venueCount: venues.length, marketCount: futurePoints.length, source: venues.join(" + ") };
 }
 
 function ModelsScreen({ data, generatedAt, loading }: { data: DashboardData["ai"] | null; generatedAt: string | null; loading: boolean }) {
   const forecasts = useMemo(() => data?.forecasts ?? [], [data?.forecasts]);
-  const fitted = useMemo(() => forecasts.map(fitForecast).filter((forecast): forecast is FittedForecast => forecast != null).sort((a, b) => a.median - b.median), [forecasts]);
+  const calendarForecasts = useMemo(() => forecasts.map(calendarForecast).filter((forecast): forecast is CalendarForecast => forecast != null).sort((a, b) => (a.median ?? Infinity) - (b.median ?? Infinity) || a.lastDeadline - b.lastDeadline), [forecasts]);
+  const fitted = useMemo(() => calendarForecasts.filter((forecast): forecast is CalendarForecast & { median: number } => forecast.median != null), [calendarForecasts]);
   const earliest = fitted[0];
   const bounds = useMemo(() => {
-    const dates = fitted.flatMap((forecast) => [forecast.q10, forecast.q90, forecast.median, ...forecast.points.map((point) => point.deadline ? new Date(point.deadline).getTime() : NaN)]).filter((value): value is number => value != null && Number.isFinite(value));
+    const dates = calendarForecasts.flatMap((forecast) => [forecast.q10, forecast.q90, forecast.median, forecast.lastDeadline, ...forecast.points.map((point) => point.deadline ? new Date(point.deadline).getTime() : NaN)]).filter((value): value is number => value != null && Number.isFinite(value));
     const currentMonth = new Date(); currentMonth.setUTCDate(1); currentMonth.setUTCHours(0, 0, 0, 0);
     const fiveMonthsOut = new Date(currentMonth); fiveMonthsOut.setUTCMonth(fiveMonthsOut.getUTCMonth() + 5);
     const minDate = dates.length ? Math.min(...dates) : currentMonth.getTime();
@@ -253,7 +260,7 @@ function ModelsScreen({ data, generatedAt, loading }: { data: DashboardData["ai"
     const start = new Date(minDate); start.setUTCDate(1); start.setUTCHours(0, 0, 0, 0);
     const end = new Date(maxDate); end.setUTCMonth(end.getUTCMonth() + 1, 1); end.setUTCHours(0, 0, 0, 0);
     return { start: start.getTime(), end: end.getTime() };
-  }, [fitted]);
+  }, [calendarForecasts]);
   const months = useMemo(() => {
     const values: number[] = [];
     const cursor = new Date(bounds.start);
@@ -271,10 +278,10 @@ function ModelsScreen({ data, generatedAt, loading }: { data: DashboardData["ai"
       <PanelHeading kicker="SHARED CALENDAR" title="Expected model releases" aside={generatedAt ? `Deadline CDF · ${fmtTime(generatedAt)}` : "Live public contracts"} />
       <div className="calendar-wrap">
         <TimelineAxis bounds={bounds} months={months} />
-        {fitted.map((forecast) => <ForecastBand forecast={forecast} bounds={bounds} months={months} key={`${forecast.company}-${forecast.model}`} />)}
-        {!fitted.length && <EmptyState title={loading ? "Fitting dated contracts…" : "No model has enough active dated contracts"} detail="At least two release-by markets are required; no fallback window is shown." compact />}
+        {calendarForecasts.map((forecast) => <ForecastBand forecast={forecast} bounds={bounds} months={months} key={`${forecast.company}-${forecast.model}`} />)}
+        {!calendarForecasts.length && <EmptyState title={loading ? "Fitting dated contracts…" : "No model has enough active dated contracts"} detail="At least two release-by markets are required; no fallback window is shown." compact />}
       </div>
-      <div className="calendar-foot"><span>Only venues reaching 50% are fitted and equally weighted; unresolved tails stay open-ended.</span><span><i className="outer" /> 80%</span><span><i className="inner" /> 50%</span><span><i className="median" /> 50% date</span></div>
+      <div className="calendar-foot"><span>Venues reaching 50% are fitted and equally weighted; rows without a crossing remain open-ended.</span><span><i className="outer" /> 80%</span><span><i className="inner" /> 50%</span><span><i className="median" /> 50% date</span></div>
     </article>
 
   </>;
@@ -289,14 +296,26 @@ function TimelineAxis({ bounds, months }: { bounds: { start: number; end: number
   })}</div><span>FIT</span></div>;
 }
 
-function ForecastBand({ forecast, bounds, months }: { forecast: FittedForecast; bounds: { start: number; end: number }; months: number[] }) {
+function ForecastBand({ forecast, bounds, months }: { forecast: CalendarForecast; bounds: { start: number; end: number }; months: number[] }) {
+  const label = <a className="calendar-label" href={forecast.sourceUrl} target="_blank" rel="noreferrer"><span>{forecast.company}</span><strong>{forecast.model}</strong><small>{forecast.source} · {forecast.marketCount} markets</small></a>;
+  if (forecast.median == null || forecast.q10 == null || forecast.q25 == null) {
+    const last = timePosition(forecast.lastDeadline, bounds);
+    return <div className={`calendar-row ${forecast.color}`}>
+      {label}
+      <div className="calendar-track" aria-label={`${forecast.model}: active release-by contracts do not reach a 50 percent probability through ${fmtDate(new Date(forecast.lastDeadline).toISOString())}`}>
+        {months.map((month) => <i className="month-rule" style={{ left: `${timePosition(month, bounds)}%` }} key={month} />)}
+        <div className="calendar-unresolved" style={{ left: `${last}%`, width: `${100 - last}%` }}><span>50% NOT REACHED</span><small>THROUGH {fmtDate(new Date(forecast.lastDeadline).toISOString(), { month: "short", day: "numeric", timeZone: "UTC" }).toUpperCase()}</small></div>
+      </div>
+      <div className="calendar-score"><strong>{forecast.venueCount}</strong><span>VENUE{forecast.venueCount === 1 ? "" : "S"}</span></div>
+    </div>;
+  }
   const outerLeft = timePosition(forecast.q10, bounds);
   const outerRight = forecast.q90 == null ? 100 : timePosition(forecast.q90, bounds);
   const innerLeft = timePosition(forecast.q25, bounds);
   const innerRight = forecast.q75 == null ? 100 : timePosition(forecast.q75, bounds);
   const median = timePosition(forecast.median, bounds);
   return <div className={`calendar-row ${forecast.color}`}>
-    <a className="calendar-label" href={forecast.sourceUrl} target="_blank" rel="noreferrer"><span>{forecast.company}</span><strong>{forecast.model}</strong><small>{forecast.source} · {forecast.marketCount} markets</small></a>
+    {label}
     <div className="calendar-track" aria-label={`${forecast.model}: 50 percent implied date ${fmtDate(new Date(forecast.median).toISOString())}; ${forecast.q75 == null || forecast.q90 == null ? "one or more confidence intervals remain open-ended" : "central 50 percent and 80 percent release intervals"}`}>
       {months.map((month) => <i className="month-rule" style={{ left: `${timePosition(month, bounds)}%` }} key={month} />)}
       <div className={`calendar-outer ${forecast.q90 == null ? "open-ended" : ""}`} style={{ left: `${outerLeft}%`, width: `${outerRight - outerLeft}%` }} />

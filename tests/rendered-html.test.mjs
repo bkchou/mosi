@@ -36,7 +36,7 @@ test("server-renders the AI Models screen and production metadata", async () => 
   const html = await response.text();
   assert.match(html, /When the next models land\./);
   assert.match(html, /Expected model releases/);
-  assert.match(html, /Only venues reaching 50% are fitted/);
+  assert.match(html, /rows without a crossing remain open-ended/);
   assert.doesNotMatch(html, /What the markets are actually trading/);
   assert.doesNotMatch(html, /Q1 2027|Reference windows|false precision/);
   assert.match(html, /MOSI/);

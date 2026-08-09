@@ -187,6 +187,10 @@ h1 { margin: 0; max-width: 940px; font-family: var(--font-newsreader), Georgia, 
 .calendar-outer.open-ended { border-right: 0; background: linear-gradient(90deg, var(--model-soft) 65%, transparent); }
 .calendar-inner.open-ended { background: linear-gradient(90deg, var(--model) 55%, transparent); }
 .calendar-outer.open-ended::after, .calendar-inner.open-ended::after { content: ">"; position: absolute; right: 2px; top: 50%; transform: translateY(-52%); color: var(--model); font: 700 9px var(--font-geist-mono); }
+.calendar-unresolved { position: absolute; top: 37px; height: 1px; min-width: 18px; border-top: 1px dashed var(--model); background: linear-gradient(90deg, var(--model-soft), transparent); }
+.calendar-unresolved::before { content: ""; position: absolute; left: -2px; top: -5px; width: 7px; height: 7px; border: 2px solid var(--model); border-radius: 50%; background: var(--panel); }
+.calendar-unresolved span, .calendar-unresolved small { position: absolute; left: 7px; white-space: nowrap; font-family: var(--font-geist-mono); }
+.calendar-unresolved span { bottom: 8px; color: var(--model); font-size: 8px; font-weight: 700; }.calendar-unresolved small { top: 8px; color: var(--muted); font-size: 7px; }
 .calendar-median { position: absolute; top: 14px; height: 44px; width: 2px; background: var(--model); }
 .calendar-median::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--model); position: absolute; left: -3px; top: 18px; box-shadow: 0 0 0 3px var(--panel); }
 .calendar-median span { position: absolute; left: 6px; top: 48px; color: var(--ink); font: 650 8px var(--font-geist-mono); white-space: nowrap; }
