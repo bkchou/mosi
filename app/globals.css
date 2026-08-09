@@ -33,6 +33,7 @@ button { font: inherit; }
 .status-pill:hover { border-color: var(--ink); transform: translate(-1px, -1px); box-shadow: 3px 3px 0 rgba(23,32,29,.12); }
 .pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px rgba(12,155,101,.1); }
 .pulse.amber { background: #e6a42c; box-shadow: 0 0 0 4px rgba(230,164,44,.12); animation: pulse 1.2s infinite; }
+.pulse.red { background: #d64d3e; box-shadow: 0 0 0 4px rgba(214,77,62,.12); }
 @keyframes pulse { 50% { opacity: .35; } }
 
 main { width: min(1440px, 92vw); margin: 0 auto; padding-bottom: 60px; }
@@ -60,6 +61,27 @@ h1 { margin: 0; max-width: 940px; font-family: var(--font-newsreader), Georgia, 
 .panel-heading h2 { margin: 0; font-size: 19px; line-height: 1.1; letter-spacing: -.025em; font-weight: 620; }
 .panel-heading > small { color: var(--muted); font: 500 9px/1.2 var(--font-geist-mono); text-transform: uppercase; letter-spacing: .08em; text-align: right; }
 .data-note { margin: 14px 18px 0; border: 1px solid #ead7ad; background: #fff9e9; color: #765b26; padding: 9px 11px; display: flex; gap: 8px; align-items: center; font-size: 11px; }
+
+.empty-state { min-height: 220px; border: 1px dashed #bdc4bf; background: rgba(251,252,249,.55); display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 8px; padding: 28px; text-align: center; color: var(--muted); }
+.empty-state strong { color: var(--ink); font-size: 14px; }.empty-state span { max-width: 520px; font: 500 10px/1.5 var(--font-geist-mono); }
+.empty-state.compact { min-height: 150px; border: 0; }
+
+.decision-tabs { display: flex; gap: 7px; padding: 14px 18px 0; }
+.decision-tabs button { border: 1px solid var(--line); background: #f3f5f1; color: var(--muted); padding: 9px 12px; display: flex; align-items: baseline; gap: 9px; cursor: pointer; font-size: 11px; }
+.decision-tabs button small { font: 500 8px var(--font-geist-mono); }.decision-tabs button.active { border-color: var(--ink); background: var(--ink); color: white; }
+.decision-graph { padding: 20px 20px 0; overflow-x: auto; }
+.outcome-axis, .outcome-row { display: grid; grid-template-columns: 88px repeat(5, minmax(54px, 1fr)); gap: 8px; }
+.outcome-axis { min-height: 42px; align-items: end; }.outcome-axis span { color: var(--muted); font: 550 8px/1.25 var(--font-geist-mono); text-align: center; }
+.outcome-row { min-height: 104px; border-top: 1px solid var(--line); align-items: stretch; }
+.outcome-venue { display: flex; align-items: center; gap: 7px; font: 650 9px var(--font-geist-mono); }.outcome-venue i { width: 8px; height: 8px; border-radius: 50%; }
+.outcome-cell { position: relative; display: flex; justify-content: center; align-items: end; overflow: hidden; border-left: 1px solid #edf0ec; }
+.outcome-cell > span { position: absolute; left: 9px; right: 9px; bottom: 0; min-height: 1px; background: var(--accent); opacity: .18; transition: opacity .15s ease; }
+.outcome-cell:hover > span { opacity: .35; }.outcome-cell strong { position: relative; z-index: 1; padding-bottom: 9px; font: 650 10px var(--font-geist-mono); }
+.graph-caption { min-height: 48px; margin-top: 4px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; color: var(--muted); font: 500 8px var(--font-geist-mono); }.graph-caption strong { font-weight: 550; }
+
+.venue-status-list { display: flex; flex-direction: column; }
+.venue-status-row { min-height: 94px; display: grid; grid-template-columns: 34px 1fr auto 14px; align-items: center; gap: 13px; padding: 16px 18px; border-bottom: 1px solid var(--line); }
+.venue-status-row:hover { background: #f1f3ee; }.venue-status-row:last-child { border-bottom: 0; }
 
 .rate-graph { min-height: 330px; padding: 20px 20px 0; }
 .rate-graph canvas { width: 100%; height: 258px; display: block; }
@@ -114,7 +136,7 @@ h1 { margin: 0; max-width: 940px; font-family: var(--font-newsreader), Georgia, 
 .confidence-key { display: flex; gap: 18px; font-size: 9px; color: var(--muted); font-family: var(--font-geist-mono); white-space: nowrap; }
 .confidence-key span { display: inline-flex; gap: 6px; align-items: center; }
 .confidence-key i { display: inline-block; width: 14px; height: 8px; }
-.confidence-key .inner { background: var(--accent); }.confidence-key .outer { background: rgba(241,102,69,.18); }.confidence-key .median { width: 1px; height: 13px; background: var(--ink); }
+.confidence-key .point { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }.confidence-key .line { height: 2px; background: var(--accent); }
 .calendar-panel { margin: 16px 0; }
 .calendar-wrap { padding: 0 24px 18px; }
 .calendar-axis, .calendar-row { display: grid; grid-template-columns: 185px minmax(0, 1fr) 58px; gap: 22px; }
@@ -127,7 +149,11 @@ h1 { margin: 0; max-width: 940px; font-family: var(--font-newsreader), Georgia, 
 .calendar-label span { color: var(--model); font: 650 9px var(--font-geist-mono); letter-spacing: .12em; text-transform: uppercase; }
 .calendar-label strong { font-size: 15px; letter-spacing: -.015em; }
 .calendar-label small { color: var(--muted); font: 500 8px var(--font-geist-mono); }
-.calendar-track { height: 72px; position: relative; background-image: linear-gradient(to right, transparent calc(100% - 1px), #e4e8e3 0); background-size: 20% 100%; border-left: 1px solid #e4e8e3; }
+.calendar-track { height: 76px; position: relative; border-left: 1px solid #e4e8e3; }
+.calendar-track svg { width: 100%; height: 100%; overflow: visible; }
+.calendar-track .month-grid { stroke: #e4e8e3; stroke-width: 1; vector-effect: non-scaling-stroke; }.calendar-track .fifty-line { stroke: #cbd1cc; stroke-width: 1; stroke-dasharray: 4 5; vector-effect: non-scaling-stroke; }
+.calendar-track .release-line { fill: none; stroke: var(--model); stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.calendar-track .release-point { fill: var(--panel); stroke: var(--model); stroke-width: 3; vector-effect: non-scaling-stroke; }.calendar-track text { fill: var(--model); font: 650 9px var(--font-geist-mono); }
 .calendar-outer, .calendar-inner { position: absolute; border-radius: 2px; }
 .calendar-outer { top: 21px; height: 30px; background: var(--model-soft); border: 1px solid color-mix(in srgb, var(--model) 22%, transparent); }
 .calendar-inner { top: 29px; height: 14px; background: var(--model); opacity: .75; }
@@ -139,7 +165,7 @@ h1 { margin: 0; max-width: 940px; font-family: var(--font-newsreader), Georgia, 
 .calendar-foot { min-height: 52px; display: flex; align-items: center; justify-content: end; gap: 18px; border-top: 1px solid var(--line); padding: 0 24px; color: var(--muted); font: 500 9px var(--font-geist-mono); }
 .calendar-foot > span:first-child { margin-right: auto; }
 .calendar-foot span { display: inline-flex; align-items: center; gap: 6px; }
-.calendar-foot i { display: inline-block; width: 14px; height: 8px; }.calendar-foot .outer { background: rgba(241,102,69,.17); }.calendar-foot .inner { background: var(--accent); }.calendar-foot .median { width: 2px; height: 13px; background: var(--ink); }
+.calendar-foot i { display: inline-block; width: 14px; height: 8px; }.calendar-foot .point { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }.calendar-foot .line { height: 2px; background: var(--accent); }
 .evidence-panel { margin-top: 16px; }
 .evidence-grid { display: grid; grid-template-columns: repeat(2, 1fr); }
 .evidence-grid .market-row { border-right: 1px solid var(--line); }
@@ -169,6 +195,7 @@ h1 { margin: 0; max-width: 940px; font-family: var(--font-newsreader), Georgia, 
   h1 { font-size: 52px; }.dek { font-size: 15px; }
   .signal-strip { grid-template-columns: 1fr 1fr; }.signal-strip > div { min-height: 108px; padding: 17px; }.signal-strip strong { font-size: 24px; }
   .panel-heading { padding: 17px; }.panel-heading > small { display: none; }.rate-graph { min-height: 280px; padding: 12px 8px 0; }.rate-graph canvas { height: 220px; }.graph-values strong { font-size: 8px; }
+  .outcome-axis, .outcome-row, .graph-caption { min-width: 540px; }.decision-tabs { overflow-x: auto; }.decision-tabs button { flex: 0 0 auto; }
   .inflation-grid { grid-template-columns: 1fr 1fr; }.metric-card { padding: 15px; min-height: 215px; }.metric-card > strong { font-size: 28px; }
   .calendar-wrap { padding: 0 12px 12px; }.calendar-axis, .calendar-row { grid-template-columns: 94px minmax(0, 1fr) 38px; gap: 7px; }.calendar-axis { min-height: 40px; }.calendar-axis > div span:nth-child(even) { display: none; }.calendar-row { min-height: 86px; }.calendar-label { padding-left: 8px; border-left-width: 3px; }.calendar-label strong { font-size: 11px; }.calendar-label small { display: none; }.calendar-score strong { font-size: 12px; }.calendar-median span { display: none; }.calendar-foot { padding: 10px 12px; flex-wrap: wrap; justify-content: start; }.calendar-foot > span:first-child { width: 100%; margin: 0; }
 }

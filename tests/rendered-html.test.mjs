@@ -20,9 +20,10 @@ test("server-renders the Fed dashboard", async () => {
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /Where rates go next\./);
-  assert.match(html, /Market-implied policy graph/);
-  assert.match(html, /Official agency calendar/);
+  assert.match(html, /Observed decision probability graph/);
+  assert.match(html, /No simulated venue data/);
   assert.match(html, /Inflation, from every angle/);
+  assert.doesNotMatch(html, /61%|58%|3 of 4 venues|−51 bp/);
   assert.doesNotMatch(html, /codex-preview|Building your site|react-loading-skeleton/);
 });
 
@@ -31,9 +32,9 @@ test("server-renders the AI Models screen and production metadata", async () => 
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /When the next models land\./);
-  assert.match(html, /Next flagship/);
-  assert.match(html, /Frontier model release windows/);
-  assert.match(html, /Each row shares the same time scale\./);
+  assert.match(html, /Dated model-release probability graphs/);
+  assert.match(html, /Every row uses the same date axis and 0–100% vertical scale\./);
+  assert.doesNotMatch(html, /Q1 2027|Reference windows|false precision/);
   assert.match(html, /MOSI/);
   assert.match(html, /og\.png/);
 });

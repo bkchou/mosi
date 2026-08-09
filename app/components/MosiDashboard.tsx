@@ -1,84 +1,39 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type Screen = "fed" | "models";
 type Venue = "CME" | "Polymarket" | "Kalshi" | "Pascal";
 
-type MarketSignal = {
-  venue: Venue;
+type MarketQuote = {
+  venue: "Polymarket" | "Kalshi" | "Pascal";
   title: string;
   probability: number;
-  volume?: string;
+  volume: number | null;
+  volumeLabel: string;
   url: string;
-  closeDate?: string;
+  deadline: string | null;
+  quoteKind: string;
+  symbol?: string;
 };
 
-type InflationMetric = {
-  label: string;
-  value: string;
-  previous: string;
-  priorValue: string;
-  direction: "up" | "down" | "flat";
-  period: string;
-  source: string;
+type Outcome = { label: string; probability: number; quote: MarketQuote };
+type Decision = { label: string; meetingDate: string | null; venues: Array<{ venue: MarketQuote["venue"]; outcomes: Outcome[] }> };
+type InflationMetric = { label: string; value: number; priorValue: number; delta: number; period: string; seriesId: string; source: string; sourceUrl: string; nextEstimate: number | null; nextEstimatePeriod: string | null; nextEstimateSource: string | null };
+type VenueStatus = { venue: Venue; status: "live" | "unavailable" | "no_active_market" | "credential_required"; sourceUrl: string; note?: string };
+type Release = { label: string; releaseAt: string; source: string; sourceUrl: string };
+type Forecast = { company: string; model: string; color: string; source: string; sourceUrl: string; status: string; points: MarketQuote[] };
+type DashboardData = {
+  generatedAt: string;
+  fed: {
+    effectiveRate: { value: number | null; period: string; source: string; sourceUrl: string } | null;
+    inflation: InflationMetric[];
+    decisions: Decision[];
+    venues: VenueStatus[];
+    releases: Release[];
+  };
+  ai: { forecasts: Forecast[]; evidence: MarketQuote[] };
 };
-
-const fallbackMarkets: MarketSignal[] = [
-  {
-    venue: "CME",
-    title: "Fed Funds futures curve",
-    probability: 58,
-    volume: "Reference curve",
-    url: "https://www.cmegroup.com/markets/interest-rates/cme-fedwatch-tool.html",
-  },
-  {
-    venue: "Polymarket",
-    title: "Fed decision at the next scheduled meeting",
-    probability: 63,
-    volume: "Waiting for live match",
-    url: "https://polymarket.com/markets?_q=fed",
-  },
-  {
-    venue: "Kalshi",
-    title: "Federal funds target after the next meeting",
-    probability: 57,
-    volume: "Waiting for live match",
-    url: "https://kalshi.com/markets",
-  },
-  {
-    venue: "Pascal",
-    title: "Macro market feed",
-    probability: 52,
-    volume: "Waiting for live match",
-    url: "https://app.pascal.trade/",
-  },
-];
-
-const fallbackInflation: InflationMetric[] = [
-  { label: "Headline CPI", value: "—", previous: "—", priorValue: "—", direction: "flat", period: "latest YoY", source: "BLS · CPIAUCSL" },
-  { label: "Core CPI", value: "—", previous: "—", priorValue: "—", direction: "flat", period: "latest YoY", source: "BLS · CPILFESL" },
-  { label: "Headline PCE", value: "—", previous: "—", priorValue: "—", direction: "flat", period: "latest YoY", source: "BEA · PCEPI" },
-  { label: "Core PCE", value: "—", previous: "—", priorValue: "—", direction: "flat", period: "latest YoY", source: "BEA · PCEPILFE" },
-  { label: "Median CPI", value: "—", previous: "—", priorValue: "—", direction: "flat", period: "latest YoY", source: "Cleveland Fed" },
-  { label: "Trimmed PCE", value: "—", previous: "—", priorValue: "—", direction: "flat", period: "latest YoY", source: "Dallas Fed" },
-];
-
-const modelFallbacks = [
-  { company: "OpenAI", model: "Next flagship", median: "Q1 2027", inner: "Dec ’26 – Apr ’27", outer: "Oct ’26 – Aug ’27", confidence: 54, color: "green" },
-  { company: "Anthropic", model: "Next Claude", median: "Dec 2026", inner: "Oct ’26 – Feb ’27", outer: "Sep ’26 – May ’27", confidence: 61, color: "coral" },
-  { company: "Google", model: "Next Gemini", median: "Nov 2026", inner: "Oct ’26 – Jan ’27", outer: "Sep ’26 – Apr ’27", confidence: 68, color: "blue" },
-  { company: "xAI", model: "Next Grok", median: "Feb 2027", inner: "Dec ’26 – Apr ’27", outer: "Oct ’26 – Jul ’27", confidence: 47, color: "mono" },
-];
-
-const fedPath = [
-  { month: "Now", rate: 4.33, confidence: "observed" },
-  { month: "Sep", rate: 4.18, confidence: "61%" },
-  { month: "Oct", rate: 4.05, confidence: "58%" },
-  { month: "Dec", rate: 3.82, confidence: "54%" },
-  { month: "Mar", rate: 3.63, confidence: "48%" },
-  { month: "Jun", rate: 3.52, confidence: "43%" },
-];
 
 const venueColors: Record<Venue, string> = {
   CME: "#fd7958",
@@ -87,198 +42,64 @@ const venueColors: Record<Venue, string> = {
   Pascal: "#a479ff",
 };
 
-function fmtTime(date: Date) {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
+const outcomeOrder = ["Cut 50+ bp", "Cut 25 bp", "No change", "Hike 25 bp", "Hike 50+ bp"];
+
+function fmtTime(value: string) {
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(value));
 }
 
-function asArray(value: unknown): Record<string, unknown>[] {
-  if (Array.isArray(value)) return value as Record<string, unknown>[];
-  if (value && typeof value === "object") {
-    const object = value as Record<string, unknown>;
-    for (const key of ["markets", "data", "items"]) {
-      if (Array.isArray(object[key])) return object[key] as Record<string, unknown>[];
-    }
-  }
-  return [];
+function fmtDate(value: string | null, options?: Intl.DateTimeFormatOptions) {
+  if (!value) return "—";
+  return new Intl.DateTimeFormat("en-US", options ?? { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(new Date(value));
 }
 
-function textField(row: Record<string, unknown>, keys: string[]) {
-  for (const key of keys) {
-    if (typeof row[key] === "string" && row[key]) return row[key] as string;
-  }
-  return "";
-}
-
-function numberField(row: Record<string, unknown>, keys: string[]) {
-  for (const key of keys) {
-    const value = row[key];
-    const parsed = typeof value === "number" ? value : Number(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return 0;
-}
-
-function marketProbability(row: Record<string, unknown>) {
-  const direct = numberField(row, ["yes_bid", "yes_ask", "last_price", "mark_price", "probability"]);
-  if (direct) return direct > 1 ? Math.round(direct) : Math.round(direct * 100);
-  const outcomePrices = row.outcomePrices;
-  if (typeof outcomePrices === "string") {
-    try {
-      const first = Number((JSON.parse(outcomePrices) as unknown[])[0]);
-      if (Number.isFinite(first)) return Math.round(first * 100);
-    } catch {
-      return 50;
-    }
-  }
-  return 50;
-}
-
-async function fetchJson(url: string, init?: RequestInit) {
-  const response = await fetch(url, { ...init, signal: AbortSignal.timeout(7000) });
-  if (!response.ok) throw new Error(`${response.status}`);
-  return response.json() as Promise<unknown>;
-}
-
-async function fetchPredictionMarkets(screen: Screen) {
-  const terms = screen === "fed"
-    ? /\b(fed|federal reserve|interest rate|fomc)\b/i
-    : /\b(openai|gpt|anthropic|claude|gemini|google ai|grok|xai|frontier model)\b/i;
-
-  const jobs: Promise<MarketSignal[]>[] = [
-    fetchJson("https://gamma-api.polymarket.com/markets?active=true&closed=false&limit=500&order=volume&ascending=false")
-      .then((payload) => asArray(payload).filter((row) => terms.test(textField(row, ["question", "title"]))).slice(0, 4).map((row) => ({
-        venue: "Polymarket" as const,
-        title: textField(row, ["question", "title"]),
-        probability: marketProbability(row),
-        volume: numberField(row, ["volumeNum", "volume"]) ? `$${Math.round(numberField(row, ["volumeNum", "volume"])).toLocaleString()} vol.` : undefined,
-        closeDate: textField(row, ["endDate", "end_date_iso"]),
-        url: `https://polymarket.com/event/${textField(row, ["slug"])}`,
-      }))).catch(() => []),
-    fetchJson("https://api.elections.kalshi.com/trade-api/v2/markets?limit=1000&status=open")
-      .then((payload) => asArray(payload).filter((row) => terms.test(textField(row, ["title", "subtitle"]))).slice(0, 4).map((row) => ({
-        venue: "Kalshi" as const,
-        title: textField(row, ["title", "subtitle"]),
-        probability: marketProbability(row),
-        volume: numberField(row, ["volume", "volume_24h"]) ? `${Math.round(numberField(row, ["volume", "volume_24h"])).toLocaleString()} contracts` : undefined,
-        closeDate: textField(row, ["close_time", "expiration_time"]),
-        url: `https://kalshi.com/markets/${textField(row, ["event_ticker", "ticker"]).toLowerCase()}`,
-      }))).catch(() => []),
-    fetchJson("https://data.pascal.trade/api/v1/markets")
-      .then((payload) => asArray(payload).filter((row) => terms.test(textField(row, ["title", "name", "question"]))).slice(0, 4).map((row) => ({
-        venue: "Pascal" as const,
-        title: textField(row, ["title", "name", "question"]),
-        probability: marketProbability(row),
-        volume: numberField(row, ["volume", "volume_usd"]) ? `$${Math.round(numberField(row, ["volume", "volume_usd"])).toLocaleString()} vol.` : undefined,
-        closeDate: textField(row, ["close_time", "end_time", "expiration_ts_ms"]),
-        url: `https://app.pascal.trade/?marketSymbol=${encodeURIComponent(textField(row, ["symbol"]))}`,
-      }))).catch(() => []),
-  ];
-
-  return (await Promise.all(jobs)).flat();
-}
-
-type FredSeries = { label: string; id: string; mode?: "rate" };
-const fredSeries: FredSeries[] = [
-  { label: "Headline CPI", id: "CPIAUCSL" },
-  { label: "Core CPI", id: "CPILFESL" },
-  { label: "Headline PCE", id: "PCEPI" },
-  { label: "Core PCE", id: "PCEPILFE" },
-  { label: "Median CPI", id: "MEDCPIM158SFRBCLE", mode: "rate" },
-  { label: "Trimmed PCE", id: "PCETRIM12M159SFRBDAL", mode: "rate" },
-];
-
-async function fetchFredMetric(series: FredSeries): Promise<InflationMetric> {
-  const response = await fetch(`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${series.id}`, {
-    signal: AbortSignal.timeout(7000),
-  });
-  if (!response.ok) throw new Error(`${response.status}`);
-  const rows = (await response.text()).trim().split("\n").slice(1)
-    .map((line) => line.split(","))
-    .filter((row) => row.length >= 2 && Number.isFinite(Number(row[1])));
-  const latest = rows.at(-1)!;
-  const previous = rows.at(-2)!;
-  let value = Number(latest[1]);
-  let prior = Number(previous[1]);
-  if (series.mode !== "rate") {
-    const yearAgo = Number(rows.at(-13)?.[1]);
-    const previousYearAgo = Number(rows.at(-14)?.[1]);
-    value = ((value / yearAgo) - 1) * 100;
-    prior = ((prior / previousYearAgo) - 1) * 100;
-  }
-  const delta = value - prior;
-  return {
-    label: series.label,
-    value: `${value.toFixed(1)}%`,
-    previous: `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}`,
-    priorValue: `${prior.toFixed(1)}%`,
-    direction: Math.abs(delta) < 0.05 ? "flat" : delta > 0 ? "up" : "down",
-    period: new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${latest[0]}T00:00:00Z`)),
-    source: `FRED · ${series.id}`,
-  };
-}
-
-async function fetchLatestFredValue(id: string) {
-  const response = await fetch(`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${id}`, { signal: AbortSignal.timeout(7000) });
-  if (!response.ok) throw new Error(`${response.status}`);
-  const latest = (await response.text()).trim().split("\n").slice(1).reverse().find((line) => Number.isFinite(Number(line.split(",")[1])));
-  return latest ? Number(latest.split(",")[1]) : null;
+function pct(value: number) {
+  return `${value < 1 && value > 0 ? value.toFixed(1) : value.toFixed(0)}%`;
 }
 
 export function MosiDashboard({ screen }: { screen: Screen }) {
-  const [markets, setMarkets] = useState<MarketSignal[]>([]);
-  const [inflation, setInflation] = useState<InflationMetric[]>(fallbackInflation);
+  const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
-  const [effectiveRate, setEffectiveRate] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/data?t=${Date.now()}`, { headers: { accept: "application/json" } });
+      if (!response.ok) throw new Error(`Data endpoint returned ${response.status}`);
+      setData(await response.json() as DashboardData);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Live data unavailable");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     let active = true;
-    Promise.all([
-      fetchPredictionMarkets(screen),
-      screen === "fed" ? Promise.allSettled(fredSeries.map(fetchFredMetric)) : Promise.resolve([]),
-      screen === "fed" ? fetchLatestFredValue("DFF").catch(() => null) : Promise.resolve(null),
-    ]).then(([liveMarkets, fredResults, liveEffectiveRate]) => {
-      if (!active) return;
-      setMarkets(liveMarkets);
-      if (screen === "fed") {
-        const liveInflation = (fredResults as PromiseSettledResult<InflationMetric>[])
-          .filter((result): result is PromiseFulfilledResult<InflationMetric> => result.status === "fulfilled")
-          .map((result) => result.value);
-        if (liveInflation.length) setInflation(liveInflation);
-      }
-      if (liveEffectiveRate != null) setEffectiveRate(liveEffectiveRate);
-      setUpdatedAt(new Date());
-      setLoading(false);
-    });
+    fetch(`/api/data?t=${Date.now()}`, { headers: { accept: "application/json" } })
+      .then((response) => {
+        if (!response.ok) throw new Error(`Data endpoint returned ${response.status}`);
+        return response.json() as Promise<DashboardData>;
+      })
+      .then((payload) => { if (active) setData(payload); })
+      .catch((reason: unknown) => { if (active) setError(reason instanceof Error ? reason.message : "Live data unavailable"); })
+      .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [screen]);
-
-  const shownMarkets = useMemo(() => {
-    if (screen === "fed") {
-      return fallbackMarkets.map((fallback) =>
-        markets.find((market) => market.venue === fallback.venue) ?? fallback,
-      );
-    }
-    return markets.length ? markets : fallbackMarkets.slice(1);
-  }, [markets, screen]);
+  }, []);
 
   return (
     <div className="app-shell">
       <header className="topbar">
-        <a className="brand" href="/" aria-label="MOSI home">
-          <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
-          <span>MOSI</span>
-        </a>
+        <a className="brand" href="/" aria-label="MOSI home"><span className="brand-mark" aria-hidden="true"><i /><i /><i /></span><span>MOSI</span></a>
         <nav className="primary-nav" aria-label="Primary navigation">
           <a className={screen === "fed" ? "active" : ""} href="/">The Fed</a>
           <a className={screen === "models" ? "active" : ""} href="/ai-models">AI Models</a>
         </nav>
-        <button className="status-pill" type="button" onClick={() => window.location.reload()} title="Refresh live data" aria-label={loading ? "Data syncing" : "Live data. Refresh"}><span className={loading ? "pulse amber" : "pulse"} />{loading ? "Syncing" : "Live"}</button>
+        <button className="status-pill" type="button" onClick={() => void refresh()} title="Refresh live data" aria-label={loading ? "Data syncing" : error ? "Data unavailable. Retry" : "Live data. Refresh"}>
+          <span className={`pulse ${loading ? "amber" : error ? "red" : ""}`} />{loading ? "Syncing" : error ? "Retry" : "Live"}
+        </button>
       </header>
 
       <main>
@@ -286,212 +107,185 @@ export function MosiDashboard({ screen }: { screen: Screen }) {
           <div>
             <p className="eyebrow">{screen === "fed" ? "MONETARY POLICY" : "FRONTIER MODEL RELEASES"}</p>
             <h1>{screen === "fed" ? "Where rates go next." : "When the next models land."}</h1>
-            <p className="dek">
-              {screen === "fed"
-                ? "A live read on the rate path traders are pricing—and the inflation data the Fed is reacting to."
-                : "Prediction-market timelines for the next generation of frontier models, expressed as release windows instead of false precision."}
-            </p>
+            <p className="dek">{screen === "fed" ? "Live meeting-outcome probabilities from public prediction markets, alongside the inflation data policymakers are reacting to." : "Dated prediction-market contracts on one calendar. Every point is a quoted probability—not a generated estimate."}</p>
           </div>
-          <div className="update-block">
-            <span>LAST REFRESH</span>
-            <strong>{updatedAt ? fmtTime(updatedAt) : "Connecting…"}</strong>
-          </div>
+          <div className="update-block"><span>DATA SNAPSHOT</span><strong>{data ? fmtTime(data.generatedAt) : loading ? "Connecting…" : "Unavailable"}</strong></div>
         </section>
 
-        {screen === "fed" ? (
-          <FedScreen markets={shownMarkets} inflation={inflation} isFallback inflationRate={effectiveRate} />
-        ) : (
-          <ModelsScreen markets={shownMarkets} isFallback={!markets.length && !loading} />
-        )}
+        {error && !data ? <EmptyState title="Live data is unavailable" detail={`${error}. No cached or synthetic values are being shown.`} /> : screen === "fed" ? <FedScreen data={data?.fed ?? null} loading={loading} /> : <ModelsScreen data={data?.ai ?? null} generatedAt={data?.generatedAt ?? null} loading={loading} />}
       </main>
-      <footer>
-        <span>MOSI / bkchou</span>
-        <span>Markets are forecasts, not facts. Nothing here is investment advice.</span>
-      </footer>
+      <footer><span>MOSI / bkchou</span><span>Market prices are forecasts, not facts. Sources link to the underlying observation or contract.</span></footer>
     </div>
   );
 }
 
-function FedScreen({ markets, inflation, isFallback, inflationRate }: { markets: MarketSignal[]; inflation: InflationMetric[]; isFallback: boolean; inflationRate: number | null }) {
-  const path = useMemo(() => {
-    if (inflationRate == null) return fedPath;
-    const reductions = [0, .15, .28, .51, .70, .81];
-    return fedPath.map((point, index) => ({ ...point, rate: Number((inflationRate - reductions[index]).toFixed(2)) }));
-  }, [inflationRate]);
+function FedScreen({ data, loading }: { data: DashboardData["fed"] | null; loading: boolean }) {
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const decision = data?.decisions[selectedIndex] ?? data?.decisions[0] ?? null;
+  const primaryVenue = decision?.venues.find((item) => item.venue === "Polymarket") ?? decision?.venues[0];
+  const topOutcome = primaryVenue?.outcomes.reduce<Outcome | null>((best, item) => !best || item.probability > best.probability ? item : best, null) ?? null;
+  const liveVenueCount = data?.venues.filter((venue) => venue.status === "live").length ?? 0;
+
   return (
     <>
       <section className="signal-strip" aria-label="Current monetary policy summary">
-        <div><span>Current effective rate</span><strong>{inflationRate == null ? "—" : `${inflationRate.toFixed(2)}%`}</strong><small>FRED · DFF</small></div>
-        <div><span>Next move priced</span><strong className="accent">−25 bp</strong><small>at 61%</small></div>
-        <div><span>Year-end reference</span><strong>{inflationRate == null ? "—" : `${path[3].rate.toFixed(2)}%`}</strong><small>−51 bp from now</small></div>
-        <div><span>Signal agreement</span><strong>Medium</strong><small>3 of 4 venues</small></div>
+        <div><span>Effective fed funds rate</span><strong>{data?.effectiveRate?.value == null ? "—" : `${data.effectiveRate.value.toFixed(2)}%`}</strong><small>{data?.effectiveRate ? `NY FED · ${data.effectiveRate.period}` : "Source unavailable"}</small></div>
+        <div><span>Next tracked decision</span><strong>{decision ? fmtDate(decision.meetingDate, { month: "short", day: "numeric", timeZone: "UTC" }) : "—"}</strong><small>{decision?.label ?? "No active decision market"}</small></div>
+        <div><span>{primaryVenue?.venue ?? "Market"} top outcome</span><strong className="accent">{topOutcome?.label ?? "—"}</strong><small>{topOutcome ? `${pct(topOutcome.probability)} quoted probability` : "No quote"}</small></div>
+        <div><span>Public feeds connected</span><strong>{data ? `${liveVenueCount} live` : "—"}</strong><small>{data ? "Pascal mirrors Polymarket" : "Checking sources"}</small></div>
       </section>
 
       <section className="dashboard-grid fed-grid">
         <article className="panel path-panel">
-          <PanelHeading kicker="FORWARD CURVE" title="Market-implied policy graph" aside="Exact rate · 20–80% range" />
-          {isFallback && <DataNote />}
-          <RateGraph points={path} />
-          <div className="legend"><span><i className="legend-dot" /> Median path</span><span><i className="legend-band" /> 20–80% market range</span></div>
+          <PanelHeading kicker="MEETING OUTCOMES" title="Observed decision probability graph" aside="Live venue quotes · not a modeled curve" />
+          {data?.decisions.length ? <>
+            <div className="decision-tabs" role="tablist" aria-label="Fed meeting">
+              {data.decisions.map((item, index) => <button key={item.label} type="button" className={index === selectedIndex ? "active" : ""} onClick={() => setSelectedIndex(index)}>{item.label}<small>{fmtDate(item.meetingDate, { month: "short", day: "numeric", timeZone: "UTC" })}</small></button>)}
+            </div>
+            {decision && <DecisionGraph decision={decision} />}
+          </> : <EmptyState title={loading ? "Syncing decision markets…" : "No active Fed decision contracts found"} detail="No substitute probabilities are shown." compact />}
         </article>
 
         <article className="panel venue-panel">
-          <PanelHeading kicker="CROSS-MARKET" title="What each venue says" aside="Yes / primary outcome" />
-          <div className="market-list">
-            {markets.slice(0, 4).map((market, index) => <MarketRow market={market} key={`${market.venue}-${market.title}-${index}`} />)}
+          <PanelHeading kicker="SOURCE STATUS" title="What is actually connected" aside="No simulated venue data" />
+          <div className="venue-status-list">
+            {(data?.venues ?? []).map((venue) => <VenueStatusRow item={venue} decision={decision} key={venue.venue} />)}
+            {!data && <EmptyState title="Checking sources…" compact />}
           </div>
         </article>
       </section>
 
       <section className="inflation-section">
-        <PanelHeading kicker="LAGGING INDICATORS" title="Inflation, from every angle" aside="Change vs prior release" />
+        <PanelHeading kicker="LAGGING INDICATORS" title="Inflation, from every angle" aside="Latest vs previous published observation" />
         <div className="inflation-grid">
-          {inflation.map((metric) => (
-            <article className="metric-card" key={metric.label}>
-              <div><span>{metric.label}</span><small>{metric.period}</small></div>
-              <strong>{metric.value}</strong>
-              <p className={metric.direction}>{metric.previous} <span>vs prior</span></p>
-              <div className="metric-gauges"><span><small>PREV</small><strong>{metric.priorValue}</strong></span><span><small>NEXT EST.</small><strong>—</strong></span></div>
-              <footer>{metric.source}</footer>
-            </article>
-          ))}
+          {(data?.inflation ?? []).map((metric) => <InflationCard metric={metric} key={metric.seriesId} />)}
         </div>
+        {!data?.inflation.length && <EmptyState title={loading ? "Syncing FRED observations…" : "Inflation observations unavailable"} detail="No substitute values are shown." compact />}
       </section>
-      <section className="release-tape" aria-label="Upcoming inflation releases">
+
+      {!!data?.releases.length && <section className="release-tape" aria-label="Upcoming inflation releases">
         <div><span>NEXT RELEASES</span><strong>Official agency calendar</strong></div>
-        <a href="https://www.bls.gov/schedule/news_release/cpi.htm" target="_blank" rel="noreferrer"><span>CPI · JUL 2026</span><strong>AUG 12 · 8:30 ET</strong><small>Consensus pending</small></a>
-        <a href="https://www.bea.gov/news/schedule" target="_blank" rel="noreferrer"><span>PCE · JUL 2026</span><strong>AUG 26 · 8:30 ET</strong><small>Consensus pending</small></a>
-      </section>
+        {data.releases.map((release) => <a href={release.sourceUrl} target="_blank" rel="noreferrer" key={release.label}><span>{release.label}</span><strong>{fmtDate(release.releaseAt, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/New_York", timeZoneName: "short" })}</strong><small>{release.source}</small></a>)}
+      </section>}
     </>
   );
 }
 
-function RateGraph({ points }: { points: typeof fedPath }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const draw = () => {
-      const width = canvas.clientWidth;
-      const height = canvas.clientHeight;
-      const ratio = window.devicePixelRatio || 1;
-      canvas.width = Math.round(width * ratio);
-      canvas.height = Math.round(height * ratio);
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-      ctx.scale(ratio, ratio);
-      const pad = { x: 24, top: 24, bottom: 38 };
-      const graphHeight = height - pad.top - pad.bottom;
-      const min = Math.floor((Math.min(...points.map((p) => p.rate)) - .25) * 4) / 4;
-      const max = Math.ceil((Math.max(...points.map((p) => p.rate)) + .25) * 4) / 4;
-      const x = (index: number) => pad.x + index * ((width - pad.x * 2) / (points.length - 1));
-      const y = (rate: number) => pad.top + ((max - rate) / (max - min)) * graphHeight;
-      ctx.clearRect(0, 0, width, height);
-      ctx.strokeStyle = "#e1e5df";
-      ctx.lineWidth = 1;
-      for (let i = 0; i < 4; i++) {
-        const gy = pad.top + (graphHeight / 3) * i;
-        ctx.beginPath(); ctx.moveTo(pad.x, gy); ctx.lineTo(width - pad.x, gy); ctx.stroke();
-      }
-      ctx.beginPath();
-      points.forEach((point, index) => {
-        const spread = .06 + index * .035;
-        const command = index === 0 ? "moveTo" : "lineTo";
-        ctx[command](x(index), y(point.rate + spread));
-      });
-      [...points].reverse().forEach((point, reverseIndex) => {
-        const index = points.length - 1 - reverseIndex;
-        const spread = .06 + index * .035;
-        ctx.lineTo(x(index), y(point.rate - spread));
-      });
-      ctx.closePath(); ctx.fillStyle = "rgba(241,102,69,.15)"; ctx.fill();
-      ctx.beginPath();
-      points.forEach((point, index) => index ? ctx.lineTo(x(index), y(point.rate)) : ctx.moveTo(x(index), y(point.rate)));
-      ctx.strokeStyle = "#f16645"; ctx.lineWidth = 3; ctx.lineJoin = "round"; ctx.lineCap = "round"; ctx.stroke();
-      points.forEach((point, index) => { ctx.beginPath(); ctx.arc(x(index), y(point.rate), 4.5, 0, Math.PI * 2); ctx.fillStyle = "#f16645"; ctx.fill(); ctx.strokeStyle = "#fbfcf9"; ctx.lineWidth = 3; ctx.stroke(); });
-    };
-    draw();
-    const observer = new ResizeObserver(draw);
-    observer.observe(canvas);
-    return () => observer.disconnect();
-  }, [points]);
-
-  return <div className="rate-graph" role="img" aria-label={`Forward policy rate graph from ${points[0].rate.toFixed(2)} percent now to ${points.at(-1)!.rate.toFixed(2)} percent by June`}>
-    <canvas ref={canvasRef} />
-    <div className="graph-values">{points.map((point) => <span key={point.month}><strong>{point.rate.toFixed(2)}%</strong><small>{point.month}</small></span>)}</div>
+function DecisionGraph({ decision }: { decision: Decision }) {
+  return <div className="decision-graph" role="img" aria-label={`${decision.label} probabilities by venue`}>
+    <div className="outcome-axis"><span />{outcomeOrder.map((label) => <span key={label}>{label.replace(" bp", "")}</span>)}</div>
+    {decision.venues.map((venue) => <div className="outcome-row" key={venue.venue}>
+      <div className="outcome-venue"><i style={{ background: venueColors[venue.venue] }} />{venue.venue}</div>
+      {outcomeOrder.map((label) => {
+        const outcome = venue.outcomes.find((item) => item.label === label);
+        return <a className="outcome-cell" key={label} href={outcome?.quote.url} target="_blank" rel="noreferrer" aria-label={outcome ? `${venue.venue} ${label}: ${pct(outcome.probability)}` : `${venue.venue} ${label}: unavailable`}>
+          <span style={{ height: `${Math.max(outcome?.probability ?? 0, 1)}%` }} />
+          <strong>{outcome ? pct(outcome.probability) : "—"}</strong>
+        </a>;
+      })}
+    </div>)}
+    <div className="graph-caption"><span>0%</span><strong>Bar height = quoted YES probability</strong><span>100%</span></div>
   </div>;
 }
 
-function ModelsScreen({ markets, isFallback }: { markets: MarketSignal[]; isFallback: boolean }) {
-  return (
-    <>
-      <section className="model-summary">
-        <div className="summary-copy">
-          <span className="label">EARLIEST HIGH-CONVICTION WINDOW</span>
-          <strong>November 2026</strong>
-          <p>Google’s next Gemini release has the tightest market-implied window.</p>
-        </div>
-        <div className="confidence-key">
-          <span><i className="inner" /> 50% window</span>
-          <span><i className="outer" /> 80% window</span>
-          <span><i className="median" /> Median</span>
-        </div>
-      </section>
+function VenueStatusRow({ item, decision }: { item: VenueStatus; decision: Decision | null }) {
+  const venueData = decision?.venues.find((venue) => venue.venue === item.venue);
+  const top = venueData?.outcomes.reduce<Outcome | null>((best, outcome) => !best || outcome.probability > best.probability ? outcome : best, null) ?? null;
+  const statusLabel = item.status === "live" ? "LIVE QUOTES" : item.status === "credential_required" ? "LICENSED FEED NEEDED" : item.status === "no_active_market" ? "NO MATCHED ACTIVE MARKET" : "UNAVAILABLE";
+  return <a className="venue-status-row" href={top?.quote.url ?? item.sourceUrl} target="_blank" rel="noreferrer">
+    <span className="venue-mark" style={{ background: venueColors[item.venue] }}>{item.venue[0]}</span>
+    <span className="market-copy"><strong>{item.venue}</strong><span>{top ? top.label : statusLabel}</span><small>{item.note ? `${item.note} · ` : ""}{top ? `${top.quote.quoteKind} · ${top.quote.volumeLabel}` : "No probability displayed"}</small></span>
+    <span className="market-prob"><strong>{top ? pct(top.probability) : "—"}</strong><small>{item.status === "live" ? "TOP" : "STATUS"}</small></span><span className="arrow">↗</span>
+  </a>;
+}
 
-      {isFallback && <DataNote label="Reference windows are shown until a release-date contract is matched." />}
+function InflationCard({ metric }: { metric: InflationMetric }) {
+  const direction = Math.abs(metric.delta) < .05 ? "flat" : metric.delta > 0 ? "up" : "down";
+  return <a className="metric-card" href={metric.sourceUrl} target="_blank" rel="noreferrer">
+    <div><span>{metric.label}</span><small>{fmtDate(`${metric.period}T00:00:00Z`, { month: "short", year: "numeric", timeZone: "UTC" })}</small></div>
+    <strong>{metric.value.toFixed(1)}%</strong>
+    <p className={direction}>{metric.delta >= 0 ? "+" : ""}{metric.delta.toFixed(1)} pp <span>vs prior</span></p>
+    <div className="metric-gauges"><span><small>PREV</small><strong>{metric.priorValue.toFixed(1)}%</strong></span><span><small>NEXT NOWCAST{metric.nextEstimatePeriod ? ` · ${fmtDate(`${metric.nextEstimatePeriod}T00:00:00Z`, { month: "short", timeZone: "UTC" }).toUpperCase()}` : ""}</small><strong>{metric.nextEstimate == null ? "—" : `${metric.nextEstimate.toFixed(1)}%`}</strong></span></div>
+    <footer>{metric.source} · {metric.seriesId}{metric.nextEstimateSource ? ` · Next: ${metric.nextEstimateSource}` : ""}</footer>
+  </a>;
+}
 
-      <article className="panel calendar-panel">
-        <PanelHeading kicker="SHARED CALENDAR" title="Frontier model release windows" aside="September 2026 – July 2027" />
-        <div className="calendar-wrap">
-          <div className="calendar-axis">
-            <span className="axis-spacer" />
-            <div><span>SEP ’26</span><span>NOV</span><span>JAN ’27</span><span>MAR</span><span>MAY</span><span>JUL</span></div>
-            <span>CONF.</span>
-          </div>
-          {modelFallbacks.map((item, index) => (
-            <div className={`calendar-row ${item.color}`} key={item.company}>
-              <div className="calendar-label"><span>{item.company}</span><strong>{item.model}</strong><small>{item.inner}</small></div>
-              <div className="calendar-track" aria-label={`${item.company} median release ${item.median}; 50 percent window ${item.inner}; 80 percent window ${item.outer}`}>
-                <div className="calendar-outer" style={{ left: `${5 + index * 4}%`, width: `${74 - index * 3}%` }} />
-                <div className="calendar-inner" style={{ left: `${20 + index * 4}%`, width: `${38 - index * 2}%` }} />
-                <div className="calendar-median" style={{ left: `${40 + index * 5}%` }}><span>{item.median}</span></div>
-              </div>
-              <div className="calendar-score"><strong>{item.confidence}%</strong><span>market</span></div>
-            </div>
-          ))}
-        </div>
-        <div className="calendar-foot">
-          <span>Each row shares the same time scale.</span>
-          <span><i className="outer" /> 80% window</span><span><i className="inner" /> 50% window</span><span><i className="median" /> Median</span>
-        </div>
-      </article>
+function ModelsScreen({ data, generatedAt, loading }: { data: DashboardData["ai"] | null; generatedAt: string | null; loading: boolean }) {
+  const forecasts = useMemo(() => data?.forecasts ?? [], [data?.forecasts]);
+  const crossing = useMemo(() => forecasts.flatMap((forecast) => forecast.points.filter((point) => point.deadline && point.probability >= 50).map((point) => ({ ...point, company: forecast.company, model: forecast.model }))).sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime())[0], [forecasts]);
+  const bounds = useMemo(() => {
+    const dates = forecasts.flatMap((forecast) => forecast.points.map((point) => point.deadline ? new Date(point.deadline).getTime() : NaN)).filter(Number.isFinite);
+    const currentMonth = new Date(); currentMonth.setUTCDate(1); currentMonth.setUTCHours(0, 0, 0, 0);
+    const fiveMonthsOut = new Date(currentMonth); fiveMonthsOut.setUTCMonth(fiveMonthsOut.getUTCMonth() + 5);
+    const minDate = dates.length ? Math.min(...dates) : currentMonth.getTime();
+    const maxDate = dates.length ? Math.max(...dates) : fiveMonthsOut.getTime();
+    const start = new Date(minDate); start.setUTCDate(1); start.setUTCHours(0, 0, 0, 0);
+    const end = new Date(maxDate); end.setUTCMonth(end.getUTCMonth() + 1, 1); end.setUTCHours(0, 0, 0, 0);
+    return { start: start.getTime(), end: end.getTime() };
+  }, [forecasts]);
+  const months = useMemo(() => {
+    const values: number[] = [];
+    const cursor = new Date(bounds.start);
+    while (cursor.getTime() < bounds.end) { values.push(cursor.getTime()); cursor.setUTCMonth(cursor.getUTCMonth() + 1); }
+    return values;
+  }, [bounds]);
 
-      <section className="panel evidence-panel">
-        <PanelHeading kicker="UNDERLYING CONTRACTS" title="What the markets are trading" aside={`${markets.length} matched signals`} />
-        <div className="evidence-grid">
-          {markets.slice(0, 6).map((market, index) => <MarketRow market={market} key={`${market.venue}-${market.title}-${index}`} compact />)}
-        </div>
-      </section>
-    </>
-  );
+  return <>
+    <section className="model-summary">
+      <div className="summary-copy"><span className="label">EARLIEST TRADED DEADLINE ≥50%</span><strong>{crossing?.deadline ? fmtDate(crossing.deadline, { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" }) : "Not available"}</strong><p>{crossing ? `${crossing.model} is quoted at ${pct(crossing.probability)} to release by this deadline on ${crossing.venue}.` : "No active contract in the current set crosses 50%."}</p></div>
+      <div className="confidence-key"><span><i className="point" /> Market quote</span><span><i className="line" /> Deadline curve</span></div>
+    </section>
+
+    <article className="panel calendar-panel">
+      <PanelHeading kicker="SHARED CALENDAR" title="Dated model-release probability graphs" aside={generatedAt ? `Snapshot ${fmtTime(generatedAt)}` : "Live public contracts"} />
+      <div className="calendar-wrap">
+        <div className="calendar-axis"><span className="axis-spacer" /><div>{months.map((month) => <span key={month}>{fmtDate(new Date(month).toISOString(), { month: "short", year: month === months[0] ? "2-digit" : undefined, timeZone: "UTC" }).toUpperCase()}</span>)}</div><span>LAST</span></div>
+        {forecasts.map((forecast) => <ReleaseCurve forecast={forecast} bounds={bounds} months={months} key={`${forecast.company}-${forecast.model}`} />)}
+        {!forecasts.length && <EmptyState title={loading ? "Syncing dated contracts…" : "No active dated release contracts found"} detail="No generated release windows are shown." compact />}
+      </div>
+      <div className="calendar-foot"><span>Every row uses the same date axis and 0–100% vertical scale.</span><span><i className="point" /> quoted YES value</span><span><i className="line" /> cumulative deadline curve</span></div>
+    </article>
+
+    <section className="panel evidence-panel">
+      <PanelHeading kicker="UNDERLYING CONTRACTS" title="What the markets are actually trading" aside={`${data?.evidence.length ?? 0} sourced quotes`} />
+      <div className="evidence-grid">{(data?.evidence ?? []).slice(0, 16).map((market, index) => <MarketRow market={market} key={`${market.venue}-${market.title}-${index}`} />)}</div>
+      {!data?.evidence.length && <EmptyState title="No contract quotes available" compact />}
+    </section>
+  </>;
+}
+
+function ReleaseCurve({ forecast, bounds, months }: { forecast: Forecast; bounds: { start: number; end: number }; months: number[] }) {
+  const width = 1000;
+  const height = 76;
+  const points = forecast.points.filter((point) => point.deadline).map((point) => ({ quote: point, x: ((new Date(point.deadline!).getTime() - bounds.start) / (bounds.end - bounds.start)) * width, y: height - 8 - (point.probability / 100) * (height - 16) }));
+  const last = forecast.points.at(-1);
+  const crossing = forecast.points.find((point) => point.probability >= 50);
+  return <div className={`calendar-row ${forecast.color}`}>
+    <a className="calendar-label" href={forecast.sourceUrl} target="_blank" rel="noreferrer"><span>{forecast.company}</span><strong>{forecast.model}</strong><small>{crossing?.deadline ? `≥50% by ${fmtDate(crossing.deadline, { month: "short", day: "numeric", timeZone: "UTC" })}` : "No ≥50% deadline"}</small></a>
+    <div className="calendar-track" aria-label={`${forecast.model} release-by probabilities from ${forecast.source}`}>
+      <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" aria-hidden="true">
+        {months.map((month) => <line x1={((month - bounds.start) / (bounds.end - bounds.start)) * width} x2={((month - bounds.start) / (bounds.end - bounds.start)) * width} y1="0" y2={height} className="month-grid" key={month} />)}
+        <line x1="0" x2={width} y1={height / 2} y2={height / 2} className="fifty-line" />
+        {points.length > 1 && <polyline points={points.map((point) => `${point.x},${point.y}`).join(" ")} className="release-line" />}
+        {points.map((point) => <g key={`${point.quote.title}-${point.x}`}><circle cx={point.x} cy={point.y} r="5" className="release-point" /><text x={Math.min(point.x + 9, width - 48)} y={Math.max(point.y - 6, 10)}>{pct(point.quote.probability)}</text></g>)}
+      </svg>
+    </div>
+    <div className="calendar-score"><strong>{last ? pct(last.probability) : "—"}</strong><span>{last?.deadline ? `BY ${fmtDate(last.deadline, { month: "short", day: "numeric", timeZone: "UTC" })}` : "NO QUOTE"}</span></div>
+  </div>;
+}
+
+function MarketRow({ market }: { market: MarketQuote }) {
+  return <a className="market-row" href={market.url} target="_blank" rel="noreferrer">
+    <span className="venue-mark" style={{ background: venueColors[market.venue] }}>{market.venue[0]}</span>
+    <span className="market-copy"><strong>{market.venue}</strong><span>{market.title}</span><small>{market.quoteKind} · {market.volumeLabel}{market.deadline ? ` · ${fmtDate(market.deadline, { month: "short", day: "numeric", timeZone: "UTC" })}` : ""}</small></span>
+    <span className="market-prob"><strong>{pct(market.probability)}</strong><small>YES</small></span><span className="arrow">↗</span>
+  </a>;
 }
 
 function PanelHeading({ kicker, title, aside }: { kicker: string; title: string; aside: string }) {
   return <div className="panel-heading"><div><span>{kicker}</span><h2>{title}</h2></div><small>{aside}</small></div>;
 }
 
-function DataNote({ label = "Reference shape anchored to live EFFR; connect a licensed CME FedWatch feed for the production curve." }: { label?: string }) {
-  return <div className="data-note"><span>◌</span>{label}</div>;
-}
-
-function MarketRow({ market, compact = false }: { market: MarketSignal; compact?: boolean }) {
-  return (
-    <a className={`market-row ${compact ? "compact" : ""}`} href={market.url} target="_blank" rel="noreferrer">
-      <span className="venue-mark" style={{ background: venueColors[market.venue] }}>{market.venue.slice(0, 1)}</span>
-      <span className="market-copy"><strong>{market.venue}</strong><span>{market.title}</span><small>{market.volume || "Public market data"}</small></span>
-      <span className="market-prob"><strong>{market.probability}%</strong><small>YES</small></span>
-      <span className="arrow" aria-hidden="true">↗</span>
-    </a>
-  );
+function EmptyState({ title, detail, compact = false }: { title: string; detail?: string; compact?: boolean }) {
+  return <div className={`empty-state ${compact ? "compact" : ""}`}><strong>{title}</strong>{detail && <span>{detail}</span>}</div>;
 }
