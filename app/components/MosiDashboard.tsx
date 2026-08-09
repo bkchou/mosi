@@ -281,7 +281,12 @@ function ModelsScreen({ data, generatedAt, loading }: { data: DashboardData["ai"
 }
 
 function TimelineAxis({ bounds, months }: { bounds: { start: number; end: number }; months: number[] }) {
-  return <div className="calendar-axis"><span className="axis-spacer" /><div className="timeline-axis">{months.map((month, index) => <span className={index === 0 ? "first" : index === months.length - 1 ? "last" : ""} style={{ left: `${timePosition(month, bounds)}%` }} key={month}>{fmtDate(new Date(month).toISOString(), { month: "short", year: index === 0 || new Date(month).getUTCMonth() === 0 ? "2-digit" : undefined, timeZone: "UTC" }).toUpperCase()}</span>)}</div><span>FIT</span></div>;
+  return <div className="calendar-axis"><span className="axis-spacer" /><div className="timeline-axis">{months.map((month, index) => {
+    const date = new Date(month);
+    const label = fmtDate(date.toISOString(), { month: "short", timeZone: "UTC" }).toUpperCase();
+    const showYear = index === 0 || date.getUTCMonth() === 0;
+    return <span className={index === 0 ? "first" : index === months.length - 1 ? "last" : ""} style={{ left: `${timePosition(month, bounds)}%` }} key={month}>{label}{showYear ? ` · ${date.getUTCFullYear()}` : ""}</span>;
+  })}</div><span>FIT</span></div>;
 }
 
 function ForecastBand({ forecast, bounds, months }: { forecast: FittedForecast; bounds: { start: number; end: number }; months: number[] }) {
