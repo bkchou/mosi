@@ -247,8 +247,12 @@ export function MosiDashboard({ screen }: { screen: Screen }) {
   }, [screen]);
 
   const shownMarkets = useMemo(() => {
-    if (markets.length) return markets;
-    return screen === "fed" ? fallbackMarkets : fallbackMarkets.slice(1);
+    if (screen === "fed") {
+      return fallbackMarkets.map((fallback) =>
+        markets.find((market) => market.venue === fallback.venue) ?? fallback,
+      );
+    }
+    return markets.length ? markets : fallbackMarkets.slice(1);
   }, [markets, screen]);
 
   return (
@@ -262,13 +266,13 @@ export function MosiDashboard({ screen }: { screen: Screen }) {
           <a className={screen === "fed" ? "active" : ""} href="/">The Fed</a>
           <a className={screen === "models" ? "active" : ""} href="/ai-models">AI Models</a>
         </nav>
-        <div className="status-pill"><span className={loading ? "pulse amber" : "pulse"} />{loading ? "Syncing" : "Live"}</div>
+        <button className="status-pill" type="button" onClick={() => window.location.reload()} title="Refresh live data" aria-label={loading ? "Data syncing" : "Live data. Refresh"}><span className={loading ? "pulse amber" : "pulse"} />{loading ? "Syncing" : "Live"}</button>
       </header>
 
       <main>
         <section className="hero-row">
           <div>
-            <p className="eyebrow">MONITORING THE SITUATION: MARKET-IMPLIED FORECASTS / {screen === "fed" ? "MONETARY POLICY" : "FRONTIER LABS"}</p>
+            <p className="eyebrow">{screen === "fed" ? "MONETARY POLICY" : "FRONTIER MODEL RELEASES"}</p>
             <h1>{screen === "fed" ? "Where rates go next." : "When the next models land."}</h1>
             <p className="dek">
               {screen === "fed"
@@ -279,7 +283,6 @@ export function MosiDashboard({ screen }: { screen: Screen }) {
           <div className="update-block">
             <span>LAST REFRESH</span>
             <strong>{updatedAt ? fmtTime(updatedAt) : "Connecting…"}</strong>
-            <button type="button" onClick={() => window.location.reload()} aria-label="Refresh live data">↻ Refresh</button>
           </div>
         </section>
 
@@ -371,26 +374,31 @@ function ModelsScreen({ markets, isFallback }: { markets: MarketSignal[]; isFall
 
       {isFallback && <DataNote label="Reference windows are shown until a release-date contract is matched." />}
 
-      <section className="model-grid">
-        {modelFallbacks.map((item, index) => (
-          <article className={`model-card ${item.color}`} key={item.company}>
-            <div className="model-card-head">
-              <div><span>{item.company}</span><h2>{item.model}</h2></div>
-              <div className="confidence-score"><strong>{item.confidence}%</strong><span>confidence</span></div>
+      <article className="panel calendar-panel">
+        <PanelHeading kicker="SHARED CALENDAR" title="Frontier model release windows" aside="September 2026 – July 2027" />
+        <div className="calendar-wrap">
+          <div className="calendar-axis">
+            <span className="axis-spacer" />
+            <div><span>SEP ’26</span><span>NOV</span><span>JAN ’27</span><span>MAR</span><span>MAY</span><span>JUL</span></div>
+            <span>CONF.</span>
+          </div>
+          {modelFallbacks.map((item, index) => (
+            <div className={`calendar-row ${item.color}`} key={item.company}>
+              <div className="calendar-label"><span>{item.company}</span><strong>{item.model}</strong><small>{item.inner}</small></div>
+              <div className="calendar-track" aria-label={`${item.company} median release ${item.median}; 50 percent window ${item.inner}; 80 percent window ${item.outer}`}>
+                <div className="calendar-outer" style={{ left: `${5 + index * 4}%`, width: `${74 - index * 3}%` }} />
+                <div className="calendar-inner" style={{ left: `${20 + index * 4}%`, width: `${38 - index * 2}%` }} />
+                <div className="calendar-median" style={{ left: `${40 + index * 5}%` }}><span>{item.median}</span></div>
+              </div>
+              <div className="calendar-score"><strong>{item.confidence}%</strong><span>market</span></div>
             </div>
-            <div className="window-visual" aria-label={`${item.company} median release ${item.median}; 50 percent window ${item.inner}; 80 percent window ${item.outer}`}>
-              <div className="months"><span>SEP</span><span>NOV</span><span>JAN</span><span>MAR</span><span>MAY</span><span>JUL</span></div>
-              <div className="outer-range" style={{ left: `${5 + index * 4}%`, width: `${74 - index * 3}%` }} />
-              <div className="inner-range" style={{ left: `${20 + index * 4}%`, width: `${38 - index * 2}%` }} />
-              <div className="median-line" style={{ left: `${40 + index * 5}%` }}><span>{item.median}</span></div>
-            </div>
-            <dl>
-              <div><dt>50% window</dt><dd>{item.inner}</dd></div>
-              <div><dt>80% window</dt><dd>{item.outer}</dd></div>
-            </dl>
-          </article>
-        ))}
-      </section>
+          ))}
+        </div>
+        <div className="calendar-foot">
+          <span>Each row shares the same time scale.</span>
+          <span><i className="outer" /> 80% window</span><span><i className="inner" /> 50% window</span><span><i className="median" /> Median</span>
+        </div>
+      </article>
 
       <section className="panel evidence-panel">
         <PanelHeading kicker="UNDERLYING CONTRACTS" title="What the markets are trading" aside={`${markets.length} matched signals`} />

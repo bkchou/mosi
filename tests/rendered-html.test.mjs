@@ -31,6 +31,8 @@ test("server-renders the AI Models screen and production metadata", async () => 
   const html = await response.text();
   assert.match(html, /When the next models land\./);
   assert.match(html, /Next flagship/);
+  assert.match(html, /Frontier model release windows/);
+  assert.match(html, /Each row shares the same time scale\./);
   assert.match(html, /MOSI/);
   assert.match(html, /og\.png/);
 });
