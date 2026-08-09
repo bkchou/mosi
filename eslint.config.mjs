@@ -11,6 +11,7 @@ const eslintConfig = defineConfig([
   globalIgnores([
     ".next/**",
     "dist/**",
+    "pages-dist/**",
     "out/**",
     "build/**",
     "next-env.d.ts",
@@ -34,6 +35,9 @@ const eslintConfig = defineConfig([
       react: {
         version: "detect",
       },
+    },
+    rules: {
+      "@next/next/no-html-link-for-pages": "off",
     },
   },
 ]);

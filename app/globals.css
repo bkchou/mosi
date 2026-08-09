@@ -8,6 +8,9 @@
   --panel: #fbfcf9;
   --accent: #f16645;
   --green: #0c9b65;
+  --font-geist-sans: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-geist-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --font-newsreader: Georgia, "Times New Roman", serif;
 }
 
 * { box-sizing: border-box; }

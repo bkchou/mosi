@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 
 type Screen = "fed" | "models";
 type Venue = "CME" | "Polymarket" | "Kalshi" | "Pascal";
@@ -255,13 +254,13 @@ export function MosiDashboard({ screen }: { screen: Screen }) {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <Link className="brand" href="/" aria-label="MOSI home">
+        <a className="brand" href="/" aria-label="MOSI home">
           <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
           <span>MOSI</span>
-        </Link>
+        </a>
         <nav className="primary-nav" aria-label="Primary navigation">
-          <Link className={screen === "fed" ? "active" : ""} href="/">The Fed</Link>
-          <Link className={screen === "models" ? "active" : ""} href="/ai-models">AI Models</Link>
+          <a className={screen === "fed" ? "active" : ""} href="/">The Fed</a>
+          <a className={screen === "models" ? "active" : ""} href="/ai-models">AI Models</a>
         </nav>
         <div className="status-pill"><span className={loading ? "pulse amber" : "pulse"} />{loading ? "Syncing" : "Live"}</div>
       </header>
@@ -269,7 +268,7 @@ export function MosiDashboard({ screen }: { screen: Screen }) {
       <main>
         <section className="hero-row">
           <div>
-            <p className="eyebrow">MONITORING THE SITUATION / {screen === "fed" ? "MONETARY POLICY" : "FRONTIER LABS"}</p>
+            <p className="eyebrow">MONITORING THE SITUATION: MARKET-IMPLIED FORECASTS / {screen === "fed" ? "MONETARY POLICY" : "FRONTIER LABS"}</p>
             <h1>{screen === "fed" ? "Where rates go next." : "When the next models land."}</h1>
             <p className="dek">
               {screen === "fed"

@@ -1,6 +1,6 @@
 # MOSI
 
-**Monitoring The Situation** is a compact market-intelligence dashboard for questions where the consensus changes faster than the official record.
+**Monitoring The Situation: Market-Implied Forecasts** is a compact market-intelligence dashboard for questions where the consensus changes faster than the official record.
 
 The first two screens cover:
 
@@ -29,6 +29,8 @@ npm test
 npm run lint
 ```
 
+`npm run build:pages` produces the static Pages bundle in `pages-dist/`.
+
 ## Deployment
 
-The production target is Cloudflare Pages at `mosi-bkchou.pages.dev`, with `mosi.bkchou.com` as the custom hostname.
+The production target is Cloudflare Pages at `mosi-bkchou.pages.dev`, with `mosi.bkchou.com` as the custom hostname. The Pages build command is `npm run build:pages` and the output directory is `pages-dist`.
