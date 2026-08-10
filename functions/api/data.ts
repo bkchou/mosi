@@ -57,6 +57,7 @@ const CACHE_TTL = {
 } as const;
 
 const POLY_SEARCH = "https://gamma-api.polymarket.com/public-search";
+const KALSHI_API = "https://external-api.kalshi.com/trade-api/v2";
 const PASCAL_MARKETS = "https://data.pascal.trade/api/v1/markets";
 const FRED_CSV = "https://fred.stlouisfed.org/graph/fredgraph.csv";
 const EFFR_API = "https://markets.newyorkfed.org/api/rates/unsecured/effr/last/1.json";
@@ -253,12 +254,12 @@ function kalshiQuote(market: JsonRecord): MarketQuote | null {
 async function kalshiMarkets(seriesTicker: string, preferEvents = false) {
   const query = `series_ticker=${encodeURIComponent(seriesTicker)}&status=open`;
   const fromEvents = async () => {
-    const payload = record(await fetchJson(`https://api.elections.kalshi.com/trade-api/v2/events?${query}&with_nested_markets=true&limit=200`, 4000));
+    const payload = record(await fetchJson(`${KALSHI_API}/events?${query}&with_nested_markets=true&limit=200`, 4000));
     return records(payload.events).flatMap((event) => records(event.markets)).filter((market) => stringValue(market.status) === "active");
   };
   if (preferEvents) return fromEvents();
   try {
-    const payload = record(await fetchJson(`https://api.elections.kalshi.com/trade-api/v2/markets?${query}&limit=1000`, 4000));
+    const payload = record(await fetchJson(`${KALSHI_API}/markets?${query}&limit=1000`, 4000));
     return records(payload.markets).filter((market) => stringValue(market.status) === "active");
   } catch {
     return fromEvents();
