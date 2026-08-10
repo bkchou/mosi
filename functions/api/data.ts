@@ -54,6 +54,7 @@ const CACHE_TTL = {
   rates: 300_000,
   inflation: 21_600_000,
   nowcasts: 1_800_000,
+  dailyMarketData: 3_600_000,
 } as const;
 
 const POLY_SEARCH = "https://gamma-api.polymarket.com/public-search";
@@ -62,6 +63,9 @@ const PASCAL_MARKETS = "https://data.pascal.trade/api/v1/markets";
 const FRED_CSV = "https://fred.stlouisfed.org/graph/fredgraph.csv";
 const EFFR_API = "https://markets.newyorkfed.org/api/rates/unsecured/effr/last/1.json";
 const CLEVELAND_NOWCAST = "https://www.clevelandfed.org/-/media/files/webcharts/inflationnowcasting/nowcast_year.json";
+const ATLANTA_MPT = "https://www.atlantafed.org/cenfis/market-probability-tracker?item=D52F87BB-8391-466C-BC80-C44F5A8CD63D";
+const TREASURY_YIELD_CURVE = "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?type=daily_treasury_yield_curve";
+const TREASURY_XML = "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=daily_treasury_yield_curve";
 
 const inflationSeries = [
   { label: "Headline CPI", id: "CPIAUCNS", kind: "index", publisher: "BLS" },
@@ -320,6 +324,15 @@ async function fetchJson(url: string, timeoutMs = 10000) {
   });
   if (!response.ok) throw new Error(`${url}: ${response.status}`);
   return response.json() as Promise<unknown>;
+}
+
+async function fetchText(url: string, accept: string, timeoutMs = 10000) {
+  const response = await fetch(url, {
+    headers: { accept, "user-agent": "MOSI/1.0 (+https://mosi.bkchou.com)" },
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!response.ok) throw new Error(`${url}: ${response.status}`);
+  return response.text();
 }
 
 async function searchPolymarket(query: string) {
@@ -586,25 +599,137 @@ function combineDecisions(poly: Awaited<ReturnType<typeof polymarketFedDecisions
   return [...combined.values()].sort((a, b) => (a.meetingDate ?? "").localeCompare(b.meetingDate ?? "")).slice(0, 3);
 }
 
+type SofrPath = {
+  asOf: string;
+  currentTargetRange: string;
+  points: Array<{ period: string; midpoint: number; low: number; high: number }>;
+  source: string;
+  sourceUrl: string;
+};
+
+function atlantaVariable(html: string, name: string): unknown {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = html.match(new RegExp(`var\\s+${escaped}\\s*=\\s*([^;]+);`));
+  if (!match) throw new Error(`Atlanta Fed MPT field missing: ${name}`);
+  return JSON.parse(match[1]);
+}
+
+export function parseAtlantaMpt(html: string): SofrPath {
+  const dates = atlantaVariable(html, "dates");
+  const targetRanges = atlantaVariable(html, "RateMovesBasisPoints");
+  const asOf = Array.isArray(dates) ? stringValue(dates[0]) : "";
+  const currentTargetRange = Array.isArray(targetRanges) ? stringValue(targetRanges[0]) : "";
+  if (!asOf) throw new Error("Atlanta Fed MPT has no observation date");
+
+  const points = [1, 2, 3, 4].flatMap((index) => {
+    const starts = atlantaVariable(html, `contract${index}_startDate`);
+    const midpoints = atlantaVariable(html, `RateMovesMidpoint${index}`);
+    const ranges = atlantaVariable(html, `RateMovesRange${index}`);
+    const period = Array.isArray(starts) ? stringValue(starts[0]) : "";
+    const midpointRow = Array.isArray(midpoints) ? midpoints.find((row) => Array.isArray(row) && row[0] === asOf) : null;
+    const rangeRow = Array.isArray(ranges) ? ranges.map(record).find((row) => stringValue(row.x) === asOf) : null;
+    const midpoint = Array.isArray(midpointRow) ? finiteNumber(midpointRow[1]) : null;
+    const low = finiteNumber(rangeRow?.low);
+    const high = finiteNumber(rangeRow?.high);
+    return period && midpoint != null && low != null && high != null ? [{ period, midpoint: midpoint / 100, low: low / 100, high: high / 100 }] : [];
+  });
+  if (points.length < 2) throw new Error("Atlanta Fed MPT has insufficient current contracts");
+  return { asOf, currentTargetRange, points, source: "Atlanta Fed Market Probability Tracker", sourceUrl: ATLANTA_MPT };
+}
+
+async function atlantaMpt() {
+  return parseAtlantaMpt(await fetchText(ATLANTA_MPT, "text/html", 15000));
+}
+
+type TreasuryObservation = { period: string; values: Record<string, number> };
+const treasuryMaturities = [
+  { key: "BC_3MONTH", label: "3M", years: .25 },
+  { key: "BC_1YEAR", label: "1Y", years: 1 },
+  { key: "BC_2YEAR", label: "2Y", years: 2 },
+  { key: "BC_5YEAR", label: "5Y", years: 5 },
+  { key: "BC_10YEAR", label: "10Y", years: 10 },
+  { key: "BC_30YEAR", label: "30Y", years: 30 },
+] as const;
+
+export function parseTreasuryYieldXml(xml: string, allowEmpty = false): TreasuryObservation[] {
+  const observations = [...xml.matchAll(/<m:properties>([\s\S]*?)<\/m:properties>/g)].flatMap((entry) => {
+    const body = entry[1];
+    const period = body.match(/<d:NEW_DATE[^>]*>([^<]+)<\/d:NEW_DATE>/)?.[1]?.slice(0, 10) ?? "";
+    const values: Record<string, number> = {};
+    for (const maturity of treasuryMaturities) {
+      const raw = body.match(new RegExp(`<d:${maturity.key}[^>]*>([^<]+)<\\/d:${maturity.key}>`))?.[1];
+      const value = finiteNumber(raw);
+      if (value != null) values[maturity.key] = value;
+    }
+    return period && Object.keys(values).length === treasuryMaturities.length ? [{ period, values }] : [];
+  });
+  if (!observations.length && !allowEmpty) throw new Error("Treasury yield curve feed has no complete observations");
+  return observations.sort((a, b) => a.period.localeCompare(b.period));
+}
+
+function nearestObservation(observations: TreasuryObservation[], target: Date, maxLagDays = 10) {
+  const targetPeriod = target.toISOString().slice(0, 10);
+  const observation = observations.filter((row) => row.period <= targetPeriod).at(-1) ?? null;
+  if (!observation) return null;
+  const lag = target.getTime() - Date.parse(`${observation.period}T00:00:00Z`);
+  return lag >= 0 && lag <= maxLagDays * 86_400_000 ? observation : null;
+}
+
+export function buildTreasuryCurve(observations: TreasuryObservation[]) {
+  observations = [...observations].sort((a, b) => a.period.localeCompare(b.period));
+  const latest = observations.at(-1);
+  if (!latest) throw new Error("Treasury yield curve feed has no current observation");
+  const latestDate = new Date(`${latest.period}T00:00:00Z`);
+  const monthAgo = new Date(latestDate); monthAgo.setUTCMonth(monthAgo.getUTCMonth() - 1);
+  const yearAgo = new Date(latestDate); yearAgo.setUTCFullYear(yearAgo.getUTCFullYear() - 1);
+  const selected = [
+    { label: "Latest", observation: latest },
+    { label: "1 month ago", observation: nearestObservation(observations, monthAgo) },
+    { label: "1 year ago", observation: nearestObservation(observations, yearAgo) },
+  ].filter((item): item is { label: string; observation: TreasuryObservation } => item.observation != null);
+  const curves = selected.map(({ label, observation }) => ({
+    label,
+    period: observation.period,
+    points: treasuryMaturities.map((maturity) => ({ label: maturity.label, years: maturity.years, value: observation.values[maturity.key] })),
+  }));
+  return {
+    asOf: latest.period,
+    curves,
+    spreads: { twoTen: latest.values.BC_10YEAR - latest.values.BC_2YEAR, threeMonthTen: latest.values.BC_10YEAR - latest.values.BC_3MONTH },
+    source: "U.S. Treasury",
+    sourceUrl: TREASURY_YIELD_CURVE,
+  };
+}
+
+async function treasuryCurve() {
+  const year = new Date().getUTCFullYear();
+  const responses = await Promise.all([year - 2, year - 1, year].map((value) => fetchText(`${TREASURY_XML}&field_tdr_date_value=${value}`, "application/xml", 15000)));
+  return buildTreasuryCurve(responses.flatMap((xml) => parseTreasuryYieldXml(xml, true)));
+}
+
 type FedData = {
   effectiveRate: Awaited<ReturnType<typeof effectiveRate>>;
   inflation: Awaited<ReturnType<typeof inflationMetrics>>;
   inflationErrors: Array<{ seriesId: string; message: string }>;
   decisions: ReturnType<typeof combineDecisions>;
-  venues: Array<{ venue: "Polymarket" | "Kalshi" | "Pascal" | "CME"; status: "live" | "unavailable" | "no_active_market" | "credential_required"; sourceUrl: string; note?: string }>;
+  venues: Array<{ venue: "Polymarket" | "Kalshi" | "Pascal"; status: "live" | "unavailable" | "no_active_market"; sourceUrl: string; note?: string }>;
   releases: Array<{ label: string; releaseAt: string; source: string; sourceUrl: string }>;
+  sofrPath: SofrPath | null;
+  treasury: Awaited<ReturnType<typeof treasuryCurve>> | null;
 };
 
 type AiData = ReturnType<typeof aiForecasts>;
 
 export async function getFedSnapshot(force = false): Promise<DataSnapshot<FedData>> {
-  const [pascal, polymarket, kalshi, nowcasts, inflation, rate] = await Promise.all([
+  const [pascal, polymarket, kalshi, nowcasts, inflation, rate, sofrPath, treasury] = await Promise.all([
     loadProvider("pascal-markets", "Pascal Fed decisions", CACHE_TTL.markets, pascalData, force),
     loadProvider("fed-polymarket", "Polymarket Fed decisions", CACHE_TTL.markets, polymarketFedDecisions, force),
     loadProvider("fed-kalshi", "Kalshi Fed decisions", CACHE_TTL.markets, kalshiFedDecisions, force),
     loadProvider("fed-nowcasts", "Cleveland Fed inflation nowcast", CACHE_TTL.nowcasts, inflationNowcasts, force),
     loadProvider("fed-inflation", "FRED inflation observations", CACHE_TTL.inflation, () => inflationMetrics(), force),
     loadProvider("fed-effective-rate", "New York Fed effective rate", CACHE_TTL.rates, effectiveRate, force),
+    loadProvider("fed-atlanta-mpt", "Atlanta Fed SOFR options model", CACHE_TTL.dailyMarketData, atlantaMpt, force),
+    loadProvider("fed-treasury-curve", "U.S. Treasury yield curve", CACHE_TTL.dailyMarketData, treasuryCurve, force),
   ]);
   const pascalMarkets = pascal.value ?? [];
   const polymarketDecisions = polymarket.value ?? [];
@@ -612,11 +737,11 @@ export async function getFedSnapshot(force = false): Promise<DataSnapshot<FedDat
   const pascalDecisions = pascalFedDecisions(pascalMarkets);
   const nowcastValues = nowcasts.value ?? new Map<string, { value: number; period: string }>();
   const inflationValues = applyInflationNowcasts(inflation.value ?? [], nowcastValues);
-  const sources = [pascal.health, polymarket.health, kalshi.health, nowcasts.health, inflation.health, rate.health];
+  const sources = [pascal.health, polymarket.health, kalshi.health, nowcasts.health, inflation.health, rate.health, sofrPath.health, treasury.health];
 
   return {
     generatedAt: new Date().toISOString(),
-    status: overallStatus([polymarket.health, kalshi.health, nowcasts.health, inflation.health, rate.health]),
+    status: overallStatus([polymarket.health, kalshi.health, nowcasts.health, inflation.health, rate.health, sofrPath.health, treasury.health]),
     sources,
     data: {
       effectiveRate: rate.value ?? null,
@@ -627,12 +752,13 @@ export async function getFedSnapshot(force = false): Promise<DataSnapshot<FedDat
         { venue: "Polymarket", status: polymarketDecisions.length ? "live" : "unavailable", sourceUrl: "https://polymarket.com/markets?_q=fed" },
         { venue: "Pascal", status: pascalDecisions.length ? "live" : "unavailable", sourceUrl: "https://app.pascal.trade/", note: "Mirrors Polymarket contracts" },
         { venue: "Kalshi", status: kalshiDecisions.length ? "live" : "no_active_market", sourceUrl: "https://kalshi.com/markets" },
-        { venue: "CME", status: "credential_required", sourceUrl: "https://www.cmegroup.com/markets/interest-rates/cme-fedwatch-tool.html" },
       ],
       releases: [
         { label: "CPI · JUL 2026", releaseAt: "2026-08-12T12:30:00.000Z", source: "BLS official calendar", sourceUrl: "https://www.bls.gov/schedule/news_release/cpi.htm" },
         { label: "PCE · JUL 2026", releaseAt: "2026-08-26T12:30:00.000Z", source: "BEA official calendar", sourceUrl: "https://www.bea.gov/news/schedule" },
       ].filter((release) => new Date(release.releaseAt).getTime() > Date.now()),
+      sofrPath: sofrPath.value ?? null,
+      treasury: treasury.value ?? null,
     },
   };
 }

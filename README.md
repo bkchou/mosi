@@ -4,14 +4,14 @@
 
 The first two screens cover:
 
-- **The Fed** — a compact consensus distribution from normalized Polymarket and Kalshi meeting outcomes, plus official EFFR and inflation observations.
+- **The Fed** — a compact consensus distribution from normalized Polymarket and Kalshi meeting outcomes, official EFFR and inflation observations, the Atlanta Fed's options-implied SOFR path, and the U.S. Treasury yield curve.
 - **AI Models** — exact market-implied median dates and central 50%/80% release intervals fitted from multiple dated contracts on one shared calendar. Venue probabilities are combined before quantiles are calculated, and unsupported tails remain explicitly open-ended.
 
 ## Data sources
 
 MOSI normalizes narrowly matched contracts from the Polymarket Gamma API, Kalshi Trade API, and Pascal Read API in a Cloudflare Pages Function. Pascal identifies its displayed contracts as Polymarket mirrors, so MOSI labels them accordingly instead of treating them as independent consensus.
 
-EFFR comes directly from the Federal Reserve Bank of New York. Published inflation observations come from FRED using official BLS, BEA, Cleveland Fed, and Dallas Fed series; available next-period estimates are labeled as Cleveland Fed nowcasts. CME FedWatch is shown as unavailable until a licensed API credential is configured.
+EFFR comes directly from the Federal Reserve Bank of New York. Published inflation observations come from FRED using official BLS, BEA, Cleveland Fed, and Dallas Fed series; available next-period estimates are labeled as Cleveland Fed nowcasts. The forward three-month SOFR path is the Atlanta Fed Market Probability Tracker's daily published output, which is estimated from CME SOFR options. Treasury par yields come from the Treasury's official daily XML feed. MOSI does not scrape or claim direct access to CME FedWatch.
 
 There are no numerical fallback forecasts. If a source or exact active contract is unavailable, MOSI shows an unavailable state rather than synthesizing a value. Market prices are informational forecasts, not investment advice.
 

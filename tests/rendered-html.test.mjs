@@ -26,6 +26,8 @@ test("server-renders the Fed dashboard", async () => {
   assert.match(html, /Consensus probability graph/);
   assert.match(html, /Venue midpoints normalized to 100%/);
   assert.match(html, /Inflation history \+ gauges/);
+  assert.match(html, /SOFR path \+ Treasury curve/);
+  assert.match(html, /Official published market data/);
   assert.doesNotMatch(html, /61%|58%|3 of 4 venues|−51 bp/);
   assert.doesNotMatch(html, /codex-preview|Building your site|react-loading-skeleton/);
 });

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { buildConsensus, fitDatedForecast, percentagesToTenths, timePosition } from "../lib/marketMath";
 
 type Screen = "fed" | "models";
-type Venue = "CME" | "Polymarket" | "Kalshi" | "Pascal";
+type Venue = "Polymarket" | "Kalshi" | "Pascal";
 
 type MarketQuote = {
   venue: "Polymarket" | "Kalshi" | "Pascal";
@@ -22,15 +22,19 @@ type Outcome = { label: string; probability: number; quote: MarketQuote };
 type Decision = { label: string; meetingDate: string | null; venues: Array<{ venue: MarketQuote["venue"]; outcomes: Outcome[] }> };
 type InflationPoint = { period: string; value: number };
 type InflationMetric = { label: string; value: number; priorValue: number; delta: number; period: string; seriesId: string; source: string; sourceUrl: string; nextEstimate: number | null; nextEstimatePeriod: string | null; nextEstimateSource: string | null; history: InflationPoint[] };
-type VenueStatus = { venue: Venue; status: "live" | "unavailable" | "no_active_market" | "credential_required"; sourceUrl: string; note?: string };
+type VenueStatus = { venue: Venue; status: "live" | "unavailable" | "no_active_market"; sourceUrl: string; note?: string };
 type Release = { label: string; releaseAt: string; source: string; sourceUrl: string };
 type Forecast = { company: string; model: string; color: string; source: string; sourceUrl: string; status: string; points: MarketQuote[] };
+type SofrPath = { asOf: string; currentTargetRange: string; points: Array<{ period: string; midpoint: number; low: number; high: number }>; source: string; sourceUrl: string };
+type TreasuryCurve = { asOf: string; curves: Array<{ label: string; period: string; points: Array<{ label: string; years: number; value: number }> }>; spreads: { twoTen: number; threeMonthTen: number }; source: string; sourceUrl: string };
 type FedData = {
   effectiveRate: { value: number | null; period: string; source: string; sourceUrl: string } | null;
   inflation: InflationMetric[];
   decisions: Decision[];
   venues: VenueStatus[];
   releases: Release[];
+  sofrPath: SofrPath | null;
+  treasury: TreasuryCurve | null;
 };
 type AiData = { forecasts: Forecast[]; evidence: MarketQuote[] };
 type FeedStatus = "live" | "partial" | "stale";
@@ -149,7 +153,7 @@ function FedScreen({ data, loading }: { data: FedData | null; loading: boolean }
             </div>
             <ConsensusGraph outcomes={displayedConsensus} />
           </> : <EmptyState title={loading ? "Syncing decision markets…" : "No active Fed decision contracts found"} detail="No substitute probabilities are shown." compact />}
-          <div className="source-ribbon"><span><i className={independentVenueCount ? "live-dot" : "muted-dot"} /> {independentVenueCount ? `${independentVenues.map((venue) => venue.venue).join(" + ")} eligible` : "No complete independent venue"}</span><span>Each eligible venue normalized before averaging</span><span>Pascal mirror · CME licensed</span></div>
+          <div className="source-ribbon"><span><i className={independentVenueCount ? "live-dot" : "muted-dot"} /> {independentVenueCount ? `${independentVenues.map((venue) => venue.venue).join(" + ")} eligible` : "No complete independent venue"}</span><span>Each eligible venue normalized before averaging</span><span>Atlanta Fed SOFR model below</span></div>
         </article>
 
         <article className="panel inflation-compact-panel">
@@ -160,6 +164,14 @@ function FedScreen({ data, loading }: { data: FedData | null; loading: boolean }
           </div>
           {!data?.inflation.length && <EmptyState title={loading ? "Syncing inflation…" : "Inflation observations unavailable"} detail="No substitute values are shown." compact />}
         </article>
+
+        <article className="panel rates-context-panel">
+          <PanelHeading kicker="RATES COMPLEX" title="SOFR path + Treasury curve" aside="Official published market data" />
+          <div className="rates-context-grid">
+            {data?.sofrPath ? <SofrPathGraph data={data.sofrPath} /> : <EmptyState title={loading ? "Syncing SOFR options model…" : "SOFR path unavailable"} detail="Atlanta Fed has not returned a current observation." compact />}
+            {data?.treasury ? <TreasuryCurveGraph data={data.treasury} /> : <EmptyState title={loading ? "Syncing Treasury curve…" : "Treasury curve unavailable"} detail="No substitute yields are shown." compact />}
+          </div>
+        </article>
       </section>
 
       {!!data?.releases.length && <section className="release-tape" aria-label="Upcoming inflation releases">
@@ -168,6 +180,50 @@ function FedScreen({ data, loading }: { data: FedData | null; loading: boolean }
       </section>}
     </>
   );
+}
+
+function SofrPathGraph({ data }: { data: SofrPath }) {
+  const width = 420, height = 170, left = 40, right = 404, top = 16, bottom = 128;
+  const values = data.points.flatMap((point) => [point.low, point.high]);
+  const min = Math.floor((Math.min(...values) - .1) * 4) / 4;
+  const max = Math.ceil((Math.max(...values) + .1) * 4) / 4;
+  const x = (index: number) => left + index * ((right - left) / Math.max(1, data.points.length - 1));
+  const y = (value: number) => bottom - ((value - min) / Math.max(.01, max - min)) * (bottom - top);
+  const upper = data.points.map((point, index) => `${x(index)},${y(point.high)}`).join(" ");
+  const lower = [...data.points].reverse().map((point, reverseIndex) => `${x(data.points.length - 1 - reverseIndex)},${y(point.low)}`).join(" ");
+  const line = data.points.map((point, index) => `${index ? "L" : "M"}${x(index)},${y(point.midpoint)}`).join(" ");
+  const ticks = [min, (min + max) / 2, max];
+  return <section className="rate-graph-block">
+    <div className="rate-graph-title"><div><span>EXPECTED 3-MONTH SOFR</span><strong>{data.currentTargetRange ? `Current target ${data.currentTargetRange} bp` : "Quarterly contracts"}</strong></div><small>Mean · 25–75% range</small></div>
+    <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Atlanta Fed expected three-month SOFR path as of ${data.asOf}`}>
+      {ticks.map((tick) => <g className="rate-grid" key={tick}><line x1={left} x2={right} y1={y(tick)} y2={y(tick)} /><text x={left - 7} y={y(tick) + 3}>{tick.toFixed(2)}%</text></g>)}
+      <polygon className="sofr-band" points={`${upper} ${lower}`} />
+      <path className="sofr-line" d={line} />
+      {data.points.map((point, index) => <g className="rate-point" key={point.period}><circle cx={x(index)} cy={y(point.midpoint)} r="3"><title>{fmtDate(`${point.period}T00:00:00Z`)} · {point.midpoint.toFixed(2)}% ({point.low.toFixed(2)}–{point.high.toFixed(2)}%)</title></circle><text x={x(index)} y="145">{fmtDate(`${point.period}T00:00:00Z`, { month: "short", year: "2-digit", timeZone: "UTC" }).toUpperCase()}</text><text className="rate-value" x={x(index)} y="160">{point.midpoint.toFixed(2)}%</text></g>)}
+    </svg>
+    <a className="rate-source" href={data.sourceUrl} target="_blank" rel="noreferrer">{data.source} · as of {data.asOf} ↗</a>
+  </section>;
+}
+
+function TreasuryCurveGraph({ data }: { data: TreasuryCurve }) {
+  const width = 420, height = 170, left = 40, right = 404, top = 16, bottom = 128;
+  const all = data.curves.flatMap((curve) => curve.points.map((point) => point.value));
+  const min = Math.floor((Math.min(...all) - .1) * 4) / 4;
+  const max = Math.ceil((Math.max(...all) + .1) * 4) / 4;
+  const latest = data.curves[0];
+  const x = (index: number) => left + index * ((right - left) / Math.max(1, latest.points.length - 1));
+  const y = (value: number) => bottom - ((value - min) / Math.max(.01, max - min)) * (bottom - top);
+  const ticks = [min, (min + max) / 2, max];
+  const curveClass = (label: string) => label === "Latest" ? "curve-0" : label === "1 month ago" ? "curve-1" : "curve-2";
+  return <section className="rate-graph-block treasury-block">
+    <div className="rate-graph-title"><div><span>TREASURY PAR YIELD CURVE</span><strong>2s10s {(data.spreads.twoTen * 100).toFixed(0)} bp · 3m10y {(data.spreads.threeMonthTen * 100).toFixed(0)} bp</strong></div><small>{data.curves.map((curve) => `${curve.label} ${fmtDate(`${curve.period}T00:00:00Z`, { month: "short", day: "numeric", timeZone: "UTC" })}`).join(" · ")}</small></div>
+    <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`U.S. Treasury yield curves through ${data.asOf}`}>
+      {ticks.map((tick) => <g className="rate-grid" key={tick}><line x1={left} x2={right} y1={y(tick)} y2={y(tick)} /><text x={left - 7} y={y(tick) + 3}>{tick.toFixed(2)}%</text></g>)}
+      {data.curves.map((curve) => <path className={`treasury-line ${curveClass(curve.label)}`} d={curve.points.map((point, index) => `${index ? "L" : "M"}${x(index)},${y(point.value)}`).join(" ")} key={`${curve.label}-${curve.period}`} />)}
+      {latest.points.map((point, index) => <g className="rate-point" key={point.label}><circle className="treasury-dot" cx={x(index)} cy={y(point.value)} r="3"><title>{point.label} · {point.value.toFixed(2)}% on {data.asOf}</title></circle><text x={x(index)} y="145">{point.label}</text><text className="rate-value" x={x(index)} y="160">{point.value.toFixed(2)}</text></g>)}
+    </svg>
+    <div className="curve-key">{data.curves.map((curve) => <span key={`${curve.label}-${curve.period}`}><i className={curve.label === "Latest" ? "latest" : curve.label === "1 month ago" ? "month" : "year"} /> {curve.label}</span>)}<a className="rate-source" href={data.sourceUrl} target="_blank" rel="noreferrer">{data.source} · {data.asOf} ↗</a></div>
+  </section>;
 }
 
 const inflationGraphColors: Record<string, string> = {
