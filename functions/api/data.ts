@@ -17,6 +17,45 @@ type DecisionVenue = {
   outcomes: Array<{ label: string; probability: number; quote: MarketQuote }>;
 };
 
+export type SourceHealth = {
+  source: string;
+  status: "live" | "stale" | "unavailable";
+  fetchedAt: string | null;
+  note?: string;
+};
+
+export type EndpointStatus = "live" | "partial" | "stale";
+
+export type DataSnapshot<T> = {
+  generatedAt: string;
+  status: EndpointStatus;
+  sources: SourceHealth[];
+  data: T;
+};
+
+type ProviderLoad<T> = {
+  value: T;
+  health: SourceHealth;
+};
+
+type ProviderCacheEntry = {
+  value?: unknown;
+  fetchedAt?: string;
+  expiresAt?: number;
+  inFlight?: Promise<unknown>;
+  retryAt?: number;
+  lastErrorNote?: string;
+};
+
+const providerCache = new Map<string, ProviderCacheEntry>();
+
+const CACHE_TTL = {
+  markets: 60_000,
+  rates: 300_000,
+  inflation: 21_600_000,
+  nowcasts: 1_800_000,
+} as const;
+
 const POLY_SEARCH = "https://gamma-api.polymarket.com/public-search";
 const PASCAL_MARKETS = "https://data.pascal.trade/api/v1/markets";
 const FRED_CSV = "https://fred.stlouisfed.org/graph/fredgraph.csv";
@@ -60,6 +99,128 @@ function finiteNumber(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+async function loadProvider<T>(key: string, source: string, ttl: number, loader: () => Promise<T>, force = false): Promise<ProviderLoad<T>> {
+  const now = Date.now();
+  const entry = providerCache.get(key) ?? {};
+  providerCache.set(key, entry);
+
+  if (!force && entry.value !== undefined && (entry.expiresAt ?? 0) > now) {
+    return {
+      value: entry.value as T,
+      health: { source, status: "live", fetchedAt: entry.fetchedAt ?? null },
+    };
+  }
+
+  if (!force && (entry.retryAt ?? 0) > now) {
+    return entry.value !== undefined ? {
+      value: entry.value as T,
+      health: { source, status: "stale", fetchedAt: entry.fetchedAt ?? null, note: `Using the last successful response. ${entry.lastErrorNote ?? "Refresh is temporarily paused."}` },
+    } : {
+      value: undefined as T,
+      health: { source, status: "unavailable", fetchedAt: null, note: entry.lastErrorNote ?? "Refresh is temporarily paused." },
+    };
+  }
+
+  if (!entry.inFlight) {
+    entry.inFlight = loader().then((value) => {
+      entry.value = value;
+      entry.fetchedAt = new Date().toISOString();
+      entry.expiresAt = Date.now() + ttl;
+      entry.retryAt = undefined;
+      entry.lastErrorNote = undefined;
+      return value;
+    }).finally(() => {
+      entry.inFlight = undefined;
+    });
+  }
+
+  try {
+    const value = await entry.inFlight as T;
+    return { value, health: { source, status: "live", fetchedAt: entry.fetchedAt ?? null } };
+  } catch (reason) {
+    const message = reason instanceof Error ? reason.message : "";
+    const status = message.match(/:\s(\d{3})$/)?.[1];
+    const note = status ? `Upstream returned HTTP ${status}.` : /timeout|aborted/i.test(message) ? "Upstream request timed out." : "Source is temporarily unavailable.";
+    entry.retryAt = Date.now() + 300_000;
+    entry.lastErrorNote = note;
+    if (entry.value !== undefined) {
+      return {
+        value: entry.value as T,
+        health: { source, status: "stale", fetchedAt: entry.fetchedAt ?? null, note: `Using the last successful response. ${note}` },
+      };
+    }
+    return {
+      value: undefined as T,
+      health: { source, status: "unavailable", fetchedAt: null, note },
+    };
+  }
+}
+
+export function overallStatus(sources: SourceHealth[]): EndpointStatus {
+  if (!sources.length) return "stale";
+  if (sources.every((source) => source.status === "live")) return "live";
+  if (sources.some((source) => source.status === "live")) return "partial";
+  return "stale";
+}
+
+export const API_CACHE_HEADERS = {
+  "cache-control": "public, max-age=60, s-maxage=120, stale-while-revalidate=600",
+  "access-control-allow-origin": "*",
+};
+
+const LAST_LIVE_SNAPSHOT_TTL = 900_000;
+
+type EdgeCache = {
+  match(request: Request): Promise<Response | undefined>;
+  put(request: Request, response: Response): Promise<void>;
+};
+
+function stableCacheRequest(request: Request) {
+  const url = new URL(request.url);
+  url.pathname = `/__mosi_snapshot${url.pathname}`;
+  url.search = "";
+  return new Request(url.toString(), { method: "GET" });
+}
+
+export async function readRecentSnapshot<T>(request: Request, maxAge = 120_000): Promise<DataSnapshot<T> | null> {
+  const edgeCache = (globalThis as unknown as { caches?: { default?: EdgeCache } }).caches?.default;
+  if (!edgeCache) return null;
+  try {
+    const cached = await edgeCache.match(stableCacheRequest(request));
+    if (!cached) return null;
+    const snapshot = await cached.json() as DataSnapshot<T>;
+    const age = Date.now() - Date.parse(snapshot.generatedAt);
+    return Number.isFinite(age) && age >= 0 && age <= maxAge ? snapshot : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function retainLastLiveSnapshot<T>(request: Request, snapshot: DataSnapshot<T>): Promise<DataSnapshot<T>> {
+  const edgeCache = (globalThis as unknown as { caches?: { default?: EdgeCache } }).caches?.default;
+  if (!edgeCache) return snapshot;
+  const key = stableCacheRequest(request);
+
+  try {
+    const cached = await edgeCache.match(key);
+    const previous = cached ? await cached.json() as DataSnapshot<T> : null;
+    const previousAge = previous ? Date.now() - Date.parse(previous.generatedAt) : Infinity;
+    const previousIsUsable = previous != null && Number.isFinite(previousAge) && previousAge >= 0 && previousAge <= LAST_LIVE_SNAPSHOT_TTL;
+    const currentLiveSources = snapshot.sources.filter((source) => source.status === "live").length;
+    const previousLiveSources = previousIsUsable ? previous.sources.filter((source) => source.status === "live").length : -1;
+
+    if (snapshot.status !== "stale" && (!previousIsUsable || currentLiveSources >= previousLiveSources)) {
+      await edgeCache.put(key, new Response(JSON.stringify(snapshot), {
+        headers: { "content-type": "application/json", "cache-control": "max-age=900" },
+      }));
+      return snapshot;
+    }
+    return previousIsUsable ? { ...snapshot, data: previous.data } : snapshot;
+  } catch {
+    return snapshot;
+  }
+}
+
 function kalshiProbability(market: JsonRecord) {
   const bid = finiteNumber(market.yes_bid_dollars);
   const ask = finiteNumber(market.yes_ask_dollars);
@@ -89,10 +250,19 @@ function kalshiQuote(market: JsonRecord): MarketQuote | null {
   };
 }
 
-async function kalshiMarkets(seriesTicker: string) {
-  const url = `https://api.elections.kalshi.com/trade-api/v2/markets?series_ticker=${encodeURIComponent(seriesTicker)}&status=open&limit=1000`;
-  const payload = record(await fetchJson(url));
-  return records(payload.markets).filter((market) => stringValue(market.status) === "active");
+async function kalshiMarkets(seriesTicker: string, preferEvents = false) {
+  const query = `series_ticker=${encodeURIComponent(seriesTicker)}&status=open`;
+  const fromEvents = async () => {
+    const payload = record(await fetchJson(`https://api.elections.kalshi.com/trade-api/v2/events?${query}&with_nested_markets=true&limit=200`, 4000));
+    return records(payload.events).flatMap((event) => records(event.markets)).filter((market) => stringValue(market.status) === "active");
+  };
+  if (preferEvents) return fromEvents();
+  try {
+    const payload = record(await fetchJson(`https://api.elections.kalshi.com/trade-api/v2/markets?${query}&limit=1000`, 4000));
+    return records(payload.markets).filter((market) => stringValue(market.status) === "active");
+  } catch {
+    return fromEvents();
+  }
 }
 
 async function kalshiFedDecisions() {
@@ -142,10 +312,10 @@ function deadlineFromQuestion(question: string): string | null {
   return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null;
 }
 
-async function fetchJson(url: string) {
+async function fetchJson(url: string, timeoutMs = 10000) {
   const response = await fetch(url, {
     headers: { accept: "application/json", "user-agent": "MOSI/1.0 (+https://mosi.bkchou.com)" },
-    signal: AbortSignal.timeout(10000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!response.ok) throw new Error(`${url}: ${response.status}`);
   return response.json() as Promise<unknown>;
@@ -347,15 +517,34 @@ async function inflationNowcasts() {
   return result;
 }
 
-async function aiForecasts(pascalMarkets: JsonRecord[]) {
-  let forecasts: Array<{ company: string; model: string; query: string; slug: string; color: string; source: string; sourceUrl: string; points: MarketQuote[]; status: string }> = await Promise.all(aiEvents.map(async (config) => {
+function applyInflationNowcasts<T extends { label: string; period: string; nextEstimate: number | null; nextEstimatePeriod: string | null; nextEstimateSource: string | null }>(metrics: T[], nowcasts: Map<string, { value: number; period: string }>) {
+  return metrics.map((metric) => {
+    const nowcast = nowcasts.get(metric.label.replace(" · 1m ann.", ""));
+    if (!nowcast || nowcast.period <= metric.period) return metric;
+    return {
+      ...metric,
+      nextEstimate: nowcast.value,
+      nextEstimatePeriod: nowcast.period,
+      nextEstimateSource: "Cleveland Fed nowcast",
+    };
+  });
+}
+
+type AiForecast = { company: string; model: string; query: string; slug: string; color: string; source: string; sourceUrl: string; points: MarketQuote[]; status: string };
+
+async function polymarketAiForecasts(): Promise<AiForecast[]> {
+  return Promise.all(aiEvents.map(async (config) => {
     const payload = await searchPolymarket(config.query);
     const event = records(payload.events).find((item) => stringValue(item.slug) === config.slug);
     if (!event) return { ...config, source: "Polymarket", sourceUrl: `https://polymarket.com/event/${config.slug}`, points: [], status: "no_active_market" };
     const points = records(event.markets).filter((market) => market.active === true && market.closed === false).map((market) => polymarketQuote(market, config.slug)).filter((quote): quote is MarketQuote => quote != null && quote.deadline != null && new Date(quote.deadline).getTime() >= Date.now() - 86400000).sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime());
     return { ...config, source: "Polymarket", sourceUrl: `https://polymarket.com/event/${config.slug}`, points, status: points.length ? "live" : "no_active_market" };
   }));
-  const [kalshiGpt, kalshiClaude, kalshiGemini, kalshiGrok] = await Promise.all(["KXGPT", "KXCLAUDE", "KXGEMINI", "KXGROK"].map((series) => kalshiMarkets(series).catch(() => [])));
+}
+
+function aiForecasts(polymarketForecasts: AiForecast[], kalshiMarketsBySeries: JsonRecord[][], pascalMarkets: JsonRecord[]) {
+  let forecasts = polymarketForecasts;
+  const [kalshiGpt, kalshiClaude, kalshiGemini, kalshiGrok] = kalshiMarketsBySeries;
   const futureQuotes = (rows: JsonRecord[], tickerPattern: RegExp) => rows.filter((market) => tickerPattern.test(stringValue(market.ticker))).map(kalshiQuote).filter((quote): quote is MarketQuote => quote != null && quote.deadline != null && new Date(quote.deadline).getTime() >= Date.now() - 86400000).sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime());
   const gptPoints = futureQuotes(kalshiGpt, /^KXGPT-OPEN-/);
   const astraPoints = futureQuotes(kalshiGpt, /^KXGPT-ASTRA-/);
@@ -396,34 +585,47 @@ function combineDecisions(poly: Awaited<ReturnType<typeof polymarketFedDecisions
   return [...combined.values()].sort((a, b) => (a.meetingDate ?? "").localeCompare(b.meetingDate ?? "")).slice(0, 3);
 }
 
-export const onRequestGet = async () => {
-  const generatedAt = new Date().toISOString();
-  const [pascalResult, polyFedResult, kalshiFedResult, nowcasts, rateResult] = await Promise.all([
-    pascalData().catch(() => []),
-    polymarketFedDecisions().catch(() => []),
-    kalshiFedDecisions().catch(() => []),
-    inflationNowcasts().catch(() => new Map<string, { value: number; period: string }>()),
-    effectiveRate().catch(() => null),
-  ]);
-  const pascalFed = pascalFedDecisions(pascalResult);
-  const [inflationResult, ai] = await Promise.all([
-    inflationMetrics(nowcasts).then((values) => ({ values, error: null as string | null })).catch((reason: unknown) => ({ values: [], error: reason instanceof Error ? reason.message : String(reason) })),
-    aiForecasts(pascalResult).catch(() => ({ forecasts: [], evidence: [] })),
-  ]);
-  const inflation = inflationResult.values;
-  const inflationErrors = inflationResult.error ? [{ seriesId: "batch", message: inflationResult.error }] : [];
+type FedData = {
+  effectiveRate: Awaited<ReturnType<typeof effectiveRate>>;
+  inflation: Awaited<ReturnType<typeof inflationMetrics>>;
+  inflationErrors: Array<{ seriesId: string; message: string }>;
+  decisions: ReturnType<typeof combineDecisions>;
+  venues: Array<{ venue: "Polymarket" | "Kalshi" | "Pascal" | "CME"; status: "live" | "unavailable" | "no_active_market" | "credential_required"; sourceUrl: string; note?: string }>;
+  releases: Array<{ label: string; releaseAt: string; source: string; sourceUrl: string }>;
+};
 
-  return Response.json({
-    generatedAt,
-    fed: {
-      effectiveRate: rateResult,
-      inflation,
-      inflationErrors,
-      decisions: combineDecisions(polyFedResult, pascalFed, kalshiFedResult),
+type AiData = ReturnType<typeof aiForecasts>;
+
+export async function getFedSnapshot(force = false): Promise<DataSnapshot<FedData>> {
+  const [pascal, polymarket, kalshi, nowcasts, inflation, rate] = await Promise.all([
+    loadProvider("pascal-markets", "Pascal Fed decisions", CACHE_TTL.markets, pascalData, force),
+    loadProvider("fed-polymarket", "Polymarket Fed decisions", CACHE_TTL.markets, polymarketFedDecisions, force),
+    loadProvider("fed-kalshi", "Kalshi Fed decisions", CACHE_TTL.markets, kalshiFedDecisions, force),
+    loadProvider("fed-nowcasts", "Cleveland Fed inflation nowcast", CACHE_TTL.nowcasts, inflationNowcasts, force),
+    loadProvider("fed-inflation", "FRED inflation observations", CACHE_TTL.inflation, () => inflationMetrics(), force),
+    loadProvider("fed-effective-rate", "New York Fed effective rate", CACHE_TTL.rates, effectiveRate, force),
+  ]);
+  const pascalMarkets = pascal.value ?? [];
+  const polymarketDecisions = polymarket.value ?? [];
+  const kalshiDecisions = kalshi.value ?? [];
+  const pascalDecisions = pascalFedDecisions(pascalMarkets);
+  const nowcastValues = nowcasts.value ?? new Map<string, { value: number; period: string }>();
+  const inflationValues = applyInflationNowcasts(inflation.value ?? [], nowcastValues);
+  const sources = [pascal.health, polymarket.health, kalshi.health, nowcasts.health, inflation.health, rate.health];
+
+  return {
+    generatedAt: new Date().toISOString(),
+    status: overallStatus([polymarket.health, kalshi.health, nowcasts.health, inflation.health, rate.health]),
+    sources,
+    data: {
+      effectiveRate: rate.value ?? null,
+      inflation: inflationValues,
+      inflationErrors: inflation.health.status === "unavailable" ? [{ seriesId: "batch", message: "FRED inflation observations are temporarily unavailable." }] : [],
+      decisions: combineDecisions(polymarketDecisions, pascalDecisions, kalshiDecisions),
       venues: [
-        { venue: "Polymarket", status: polyFedResult.length ? "live" : "unavailable", sourceUrl: "https://polymarket.com/markets?_q=fed" },
-        { venue: "Pascal", status: pascalFed.length ? "live" : "unavailable", sourceUrl: "https://app.pascal.trade/", note: "Mirrors Polymarket contracts" },
-        { venue: "Kalshi", status: kalshiFedResult.length ? "live" : "no_active_market", sourceUrl: "https://kalshi.com/markets" },
+        { venue: "Polymarket", status: polymarketDecisions.length ? "live" : "unavailable", sourceUrl: "https://polymarket.com/markets?_q=fed" },
+        { venue: "Pascal", status: pascalDecisions.length ? "live" : "unavailable", sourceUrl: "https://app.pascal.trade/", note: "Mirrors Polymarket contracts" },
+        { venue: "Kalshi", status: kalshiDecisions.length ? "live" : "no_active_market", sourceUrl: "https://kalshi.com/markets" },
         { venue: "CME", status: "credential_required", sourceUrl: "https://www.cmegroup.com/markets/interest-rates/cme-fedwatch-tool.html" },
       ],
       releases: [
@@ -431,11 +633,44 @@ export const onRequestGet = async () => {
         { label: "PCE · JUL 2026", releaseAt: "2026-08-26T12:30:00.000Z", source: "BEA official calendar", sourceUrl: "https://www.bea.gov/news/schedule" },
       ].filter((release) => new Date(release.releaseAt).getTime() > Date.now()),
     },
-    ai,
-  }, {
-    headers: {
-      "cache-control": "public, max-age=60, s-maxage=120, stale-while-revalidate=600",
-      "access-control-allow-origin": "*",
-    },
-  });
+  };
+}
+
+export async function getAiSnapshot(force = false): Promise<DataSnapshot<AiData>> {
+  const polymarketPromise = loadProvider("ai-polymarket", "Polymarket AI contracts", CACHE_TTL.markets, polymarketAiForecasts, force);
+  const kalshiConfigs = [
+    ["gpt", "GPT", "KXGPT"],
+    ["claude", "Claude", "KXCLAUDE"],
+    ["gemini", "Gemini", "KXGEMINI"],
+    ["grok", "Grok", "KXGROK"],
+  ] as const;
+  const kalshiLoads: Array<ProviderLoad<JsonRecord[]>> = [];
+  for (const [key, label, series] of kalshiConfigs) {
+    kalshiLoads.push(await loadProvider(`ai-kalshi-${key}`, `Kalshi ${label} contracts`, CACHE_TTL.markets, () => kalshiMarkets(series, true), force));
+  }
+  const polymarket = await polymarketPromise;
+  const [kalshiGpt, kalshiClaude, kalshiGemini, kalshiGrok] = kalshiLoads;
+  const sources = [polymarket.health, kalshiGpt.health, kalshiClaude.health, kalshiGemini.health, kalshiGrok.health];
+  return {
+    generatedAt: new Date().toISOString(),
+    status: overallStatus(sources),
+    sources,
+    data: aiForecasts(polymarket.value ?? [], [kalshiGpt.value ?? [], kalshiClaude.value ?? [], kalshiGemini.value ?? [], kalshiGrok.value ?? []], []),
+  };
+}
+
+export function requestForcesRefresh(request: Request | undefined) {
+  return request ? new URL(request.url).searchParams.has("refresh") : false;
+}
+
+export const onRequestGet = async ({ request }: { request: Request }) => {
+  const [fed, ai] = await Promise.all([
+    getFedSnapshot(requestForcesRefresh(request)),
+    getAiSnapshot(requestForcesRefresh(request)),
+  ]);
+  return Response.json({
+    generatedAt: new Date().toISOString(),
+    fed: fed.data,
+    ai: ai.data,
+  }, { headers: API_CACHE_HEADERS });
 };

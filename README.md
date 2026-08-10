@@ -15,6 +15,8 @@ EFFR comes directly from the Federal Reserve Bank of New York. Published inflati
 
 There are no numerical fallback forecasts. If a source or exact active contract is unavailable, MOSI shows an unavailable state rather than synthesizing a value. Market prices are informational forecasts, not investment advice.
 
+The Fed and AI screens use separate cached endpoints. Each upstream provider has its own refresh window and last-good response; the header reports `LIVE`, `PARTIAL`, or `STALE` when current sources differ. Normal page loads reuse the edge cache, while the header refresh control explicitly asks providers for a fresh snapshot.
+
 ## Local development
 
 Requires Node.js 22.13 or newer.

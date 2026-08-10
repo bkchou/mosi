@@ -25,17 +25,17 @@ type InflationMetric = { label: string; value: number; priorValue: number; delta
 type VenueStatus = { venue: Venue; status: "live" | "unavailable" | "no_active_market" | "credential_required"; sourceUrl: string; note?: string };
 type Release = { label: string; releaseAt: string; source: string; sourceUrl: string };
 type Forecast = { company: string; model: string; color: string; source: string; sourceUrl: string; status: string; points: MarketQuote[] };
-type DashboardData = {
-  generatedAt: string;
-  fed: {
-    effectiveRate: { value: number | null; period: string; source: string; sourceUrl: string } | null;
-    inflation: InflationMetric[];
-    decisions: Decision[];
-    venues: VenueStatus[];
-    releases: Release[];
-  };
-  ai: { forecasts: Forecast[]; evidence: MarketQuote[] };
+type FedData = {
+  effectiveRate: { value: number | null; period: string; source: string; sourceUrl: string } | null;
+  inflation: InflationMetric[];
+  decisions: Decision[];
+  venues: VenueStatus[];
+  releases: Release[];
 };
+type AiData = { forecasts: Forecast[]; evidence: MarketQuote[] };
+type FeedStatus = "live" | "partial" | "stale";
+type FeedSource = { source: string; status: "live" | "stale" | "unavailable"; fetchedAt: string | null; note?: string };
+type FeedEnvelope<T> = { generatedAt: string; status: FeedStatus; sources: FeedSource[]; data: T };
 
 const outcomeOrder = ["Cut 50+ bp", "Cut 25 bp", "No change", "Hike 25 bp", "Hike 50+ bp"];
 
@@ -53,36 +53,43 @@ function pct(value: number) {
 }
 
 export function MosiDashboard({ screen }: { screen: Screen }) {
-  const [data, setData] = useState<DashboardData | null>(null);
+  const [feed, setFeed] = useState<FeedEnvelope<FedData | AiData> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
+  const loadFeed = useCallback(async (force = false) => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/data?t=${Date.now()}`, { headers: { accept: "application/json" } });
+      const path = screen === "fed" ? "/api/fed" : "/api/ai";
+      const response = await fetch(force ? `${path}?refresh=${Date.now()}` : path, { headers: { accept: "application/json" } });
       if (!response.ok) throw new Error(`Data endpoint returned ${response.status}`);
-      setData(await response.json() as DashboardData);
+      setFeed(await response.json() as FeedEnvelope<FedData | AiData>);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Live data unavailable");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [screen]);
 
   useEffect(() => {
     let active = true;
-    fetch(`/api/data?t=${Date.now()}`, { headers: { accept: "application/json" } })
+    const path = screen === "fed" ? "/api/fed" : "/api/ai";
+    fetch(path, { headers: { accept: "application/json" } })
       .then((response) => {
         if (!response.ok) throw new Error(`Data endpoint returned ${response.status}`);
-        return response.json() as Promise<DashboardData>;
+        return response.json() as Promise<FeedEnvelope<FedData | AiData>>;
       })
-      .then((payload) => { if (active) setData(payload); })
+      .then((payload) => { if (active) { setFeed(payload); setError(null); } })
       .catch((reason: unknown) => { if (active) setError(reason instanceof Error ? reason.message : "Live data unavailable"); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, []);
+  }, [screen]);
+
+  const visibleStatus = loading ? "syncing" : error ? feed ? "stale" : "retry" : feed?.status ?? "syncing";
+  const statusTitle = feed ? `${feed.status.toUpperCase()} data · updated ${fmtTime(feed.generatedAt)} · ${feed.sources.map((source) => `${source.source}: ${source.status}`).join(", ")}. Click to refresh.` : "Refresh data";
+  const fedData = screen === "fed" ? feed?.data as FedData | undefined : undefined;
+  const aiData = screen === "models" ? feed?.data as AiData | undefined : undefined;
 
   return (
     <div className="app-shell">
@@ -92,8 +99,8 @@ export function MosiDashboard({ screen }: { screen: Screen }) {
           <a className={screen === "fed" ? "active" : ""} href="/">The Fed</a>
           <a className={screen === "models" ? "active" : ""} href="/ai-models">AI Models</a>
         </nav>
-        <button className="status-pill" type="button" onClick={() => void refresh()} title={data ? `Live data updated ${fmtTime(data.generatedAt)}. Click to refresh.` : "Refresh live data"} aria-label={loading ? "Data syncing" : error ? "Data unavailable. Retry" : "Live data. Refresh"}>
-          <span className={`pulse ${loading ? "amber" : error ? "red" : ""}`} />{loading ? "Syncing" : error ? "Retry" : "Live"}
+        <button className="status-pill" type="button" onClick={() => void loadFeed(true)} title={statusTitle} aria-label={`${visibleStatus} data. Refresh`}>
+          <span className={`pulse ${visibleStatus === "syncing" || visibleStatus === "partial" ? "amber" : visibleStatus === "stale" || visibleStatus === "retry" ? "red" : ""}`} />{visibleStatus}
         </button>
       </header>
 
@@ -106,14 +113,14 @@ export function MosiDashboard({ screen }: { screen: Screen }) {
           </div>
         </section>
 
-        {error && !data ? <EmptyState title="Live data is unavailable" detail={`${error}. No cached or synthetic values are being shown.`} /> : screen === "fed" ? <FedScreen data={data?.fed ?? null} loading={loading} /> : <ModelsScreen data={data?.ai ?? null} generatedAt={data?.generatedAt ?? null} loading={loading} />}
+        {error && !feed ? <EmptyState title="Live data is unavailable" detail={`${error}. No cached or synthetic values are being shown.`} /> : screen === "fed" ? <FedScreen data={fedData ?? null} loading={loading} /> : <ModelsScreen data={aiData ?? null} generatedAt={feed?.generatedAt ?? null} loading={loading} />}
       </main>
       <footer><span>MOSI / bkchou</span><span>Market prices are forecasts, not facts. Sources link to the underlying observation or contract.</span></footer>
     </div>
   );
 }
 
-function FedScreen({ data, loading }: { data: DashboardData["fed"] | null; loading: boolean }) {
+function FedScreen({ data, loading }: { data: FedData | null; loading: boolean }) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const decision = data?.decisions[selectedIndex] ?? data?.decisions[0] ?? null;
   const { eligibleVenues: independentVenues, outcomes: consensus } = useMemo(() => buildConsensus(decision?.venues ?? [], outcomeOrder), [decision]);
@@ -246,7 +253,7 @@ function calendarForecast(forecast: Forecast): CalendarForecast | null {
   return { ...forecast, median: null, q10: null, q25: null, q75: null, q90: null, lastDeadline, venueCount: venues.length, marketCount: futurePoints.length, source: venues.join(" + ") };
 }
 
-function ModelsScreen({ data, generatedAt, loading }: { data: DashboardData["ai"] | null; generatedAt: string | null; loading: boolean }) {
+function ModelsScreen({ data, generatedAt, loading }: { data: AiData | null; generatedAt: string | null; loading: boolean }) {
   const forecasts = useMemo(() => data?.forecasts ?? [], [data?.forecasts]);
   const calendarForecasts = useMemo(() => forecasts.map(calendarForecast).filter((forecast): forecast is CalendarForecast => forecast != null).sort((a, b) => (a.median ?? Infinity) - (b.median ?? Infinity) || a.lastDeadline - b.lastDeadline), [forecasts]);
   const fitted = useMemo(() => calendarForecasts.filter((forecast): forecast is CalendarForecast & { median: number } => forecast.median != null), [calendarForecasts]);
