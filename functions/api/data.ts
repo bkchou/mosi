@@ -10,6 +10,7 @@ type MarketQuote = {
   deadline: string | null;
   quoteKind: string;
   symbol?: string;
+  tokenId?: string;
 };
 
 type DecisionVenue = {
@@ -55,9 +56,11 @@ const CACHE_TTL = {
   inflation: 21_600_000,
   nowcasts: 1_800_000,
   dailyMarketData: 3_600_000,
+  schedules: 21_600_000,
 } as const;
 
 const POLY_SEARCH = "https://gamma-api.polymarket.com/public-search";
+const POLY_RELEASE_EVENTS = "https://gamma-api.polymarket.com/events/keyset?tag_id=439&title_search=release&closed=false&limit=100";
 const KALSHI_API = "https://external-api.kalshi.com/trade-api/v2";
 const PASCAL_MARKETS = "https://data.pascal.trade/api/v1/markets";
 const FRED_CSV = "https://fred.stlouisfed.org/graph/fredgraph.csv";
@@ -66,6 +69,9 @@ const CLEVELAND_NOWCAST = "https://www.clevelandfed.org/-/media/files/webcharts/
 const ATLANTA_MPT = "https://www.atlantafed.org/cenfis/market-probability-tracker?item=D52F87BB-8391-466C-BC80-C44F5A8CD63D";
 const TREASURY_YIELD_CURVE = "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?type=daily_treasury_yield_curve";
 const TREASURY_XML = "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=daily_treasury_yield_curve";
+const BLS_CPI_SCHEDULE = "https://www.bls.gov/schedule/news_release/cpi.htm";
+const BLS_RELEASE_ICS = "https://www.bls.gov/schedule/news_release/bls.ics";
+const BEA_RELEASE_DATES = "https://apps.bea.gov/API/signup/release_dates.json";
 
 const inflationSeries = [
   { label: "Headline CPI", id: "CPIAUCNS", kind: "index", publisher: "BLS" },
@@ -76,7 +82,7 @@ const inflationSeries = [
   { label: "Trimmed PCE · YoY", id: "PCETRIM12M159SFRBDAL", kind: "rate", publisher: "Dallas Fed" },
 ] as const;
 
-const aiEvents = [
+const trackedAiEvents = [
   { company: "OpenAI", model: "GPT-6", query: "GPT-6", slug: "gpt-6-released-by", color: "green" },
   { company: "Anthropic", model: "Next Claude Opus", query: "Claude release", slug: "next-claude-opus-released-byptptpt-20260727142323912", color: "coral" },
   { company: "Anthropic", model: "Next Claude Sonnet", query: "Claude release", slug: "next-claude-sonnet-released-byptptpt-20260701203831153", color: "coral" },
@@ -102,6 +108,11 @@ function finiteNumber(value: unknown): number | null {
   if (value == null || value === "") return null;
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function arrayValue(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  try { return JSON.parse(stringValue(value)) as unknown[]; } catch { return []; }
 }
 
 async function loadProvider<T>(key: string, source: string, ttl: number, loader: () => Promise<T>, force = false): Promise<ProviderLoad<T>> {
@@ -337,6 +348,10 @@ function polymarketQuote(market: JsonRecord, eventSlug: string): MarketQuote | n
   if (probability == null || !title) return null;
   const volume = finiteNumber(market.volumeNum ?? market.volume);
   const marketSlug = stringValue(market.slug);
+  const outcomes = arrayValue(market.outcomes);
+  const tokens = arrayValue(market.clobTokenIds);
+  const yesIndex = outcomes.findIndex((outcome) => stringValue(outcome).toLowerCase() === "yes");
+  const tokenId = stringValue(tokens[yesIndex >= 0 ? yesIndex : 0]);
   return {
     venue: "Polymarket",
     title,
@@ -346,6 +361,7 @@ function polymarketQuote(market: JsonRecord, eventSlug: string): MarketQuote | n
     url: `https://polymarket.com/event/${eventSlug}${marketSlug ? `?market=${encodeURIComponent(marketSlug)}` : ""}`,
     deadline: deadlineFromQuestion(title) ?? stringValue(market.endDate) ?? null,
     quoteKind: "market price",
+    ...(tokenId ? { tokenId } : {}),
   };
 }
 
@@ -537,14 +553,47 @@ function applyInflationNowcasts<T extends { label: string; period: string; nextE
 
 type AiForecast = { company: string; model: string; query: string; slug: string; color: string; source: string; sourceUrl: string; points: MarketQuote[]; status: string };
 
+function normalizeAiRelease(title: string) {
+  const clean = title.replace(/[.…?]+$/g, "").replace(/\s+released\s+(?:by|on).*$/i, "").trim();
+  if (/social network/i.test(title)) return null;
+  if (/GPT-6/i.test(clean)) return { company: "OpenAI", model: "GPT-6", color: "green" };
+  if (/OpenAI.*Astra|Astra/i.test(clean)) return { company: "OpenAI", model: "Astra", color: "green" };
+  if (/Claude Opus/i.test(clean)) return { company: "Anthropic", model: "Next Claude Opus", color: "coral" };
+  if (/Claude Sonnet/i.test(clean)) return { company: "Anthropic", model: "Next Claude Sonnet", color: "coral" };
+  if (/Claude Haiku/i.test(clean)) return { company: "Anthropic", model: "Next Claude Haiku", color: "coral" };
+  if (/Mythos/i.test(clean)) return { company: "Anthropic", model: "Next Mythos-Class", color: "coral" };
+  if (/Gemini 4/i.test(clean)) return { company: "Google", model: "Gemini 4.0", color: "blue" };
+  if (/Gemini Pro/i.test(clean)) return { company: "Google", model: "Next Gemini Pro", color: "blue" };
+  if (/Grok 4\.6/i.test(clean)) return { company: "xAI", model: "Grok 4.6", color: "mono" };
+  if (/Grok 5/i.test(clean)) return { company: "xAI", model: "Grok 5", color: "mono" };
+  if (/MAI/i.test(clean)) return { company: "Microsoft", model: "New MAI Thinking", color: "blue" };
+  if (/Kimi K4/i.test(clean)) return { company: "Moonshot AI", model: "Kimi K4", color: "mono" };
+  if (/Kimi K/i.test(clean)) return { company: "Moonshot AI", model: "Next Kimi K", color: "mono" };
+  return null;
+}
+
+export function isCumulativeAiReleaseEvent(title: string) {
+  return /released\s+by/i.test(title) && !/released\s+on/i.test(title);
+}
+
+export function isAffirmativeAiReleaseMarket(question: string) {
+  return /released\s+by/i.test(question) && !/\bno\b.*\brelease|not\s+(?:be\s+)?released/i.test(question);
+}
+
 async function polymarketAiForecasts(): Promise<AiForecast[]> {
-  return Promise.all(aiEvents.map(async (config) => {
-    const payload = await searchPolymarket(config.query);
-    const event = records(payload.events).find((item) => stringValue(item.slug) === config.slug);
-    if (!event) return { ...config, source: "Polymarket", sourceUrl: `https://polymarket.com/event/${config.slug}`, points: [], status: "no_active_market" };
-    const points = records(event.markets).filter((market) => market.active === true && market.closed === false).map((market) => polymarketQuote(market, config.slug)).filter((quote): quote is MarketQuote => quote != null && quote.deadline != null && new Date(quote.deadline).getTime() >= Date.now() - 86400000).sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime());
-    return { ...config, source: "Polymarket", sourceUrl: `https://polymarket.com/event/${config.slug}`, points, status: points.length ? "live" : "no_active_market" };
-  }));
+  const payload = record(await fetchJson(POLY_RELEASE_EVENTS));
+  const discovered = records(payload.events).flatMap((event) => {
+    const normalized = normalizeAiRelease(stringValue(event.title));
+    const slug = stringValue(event.slug);
+    if (!normalized || !slug || !isCumulativeAiReleaseEvent(stringValue(event.title))) return [];
+    const points = records(event.markets).filter((market) => market.active === true && market.closed === false && market.acceptingOrders === true && isAffirmativeAiReleaseMarket(stringValue(market.question || market.title))).map((market) => polymarketQuote(market, slug)).filter((quote): quote is MarketQuote => quote != null && quote.deadline != null && new Date(quote.deadline).getTime() >= Date.now() - 86_400_000).sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime());
+    return [{ ...normalized, query: "", slug, source: "Polymarket", sourceUrl: `https://polymarket.com/event/${slug}`, points, status: points.length >= 2 ? "live" : "insufficient_evidence" }];
+  });
+  const bySlug = new Map(discovered.map((forecast) => [forecast.slug, forecast]));
+  for (const tracked of trackedAiEvents) {
+    if (!bySlug.has(tracked.slug)) bySlug.set(tracked.slug, { ...tracked, source: "Polymarket", sourceUrl: `https://polymarket.com/event/${tracked.slug}`, points: [], status: "insufficient_evidence" });
+  }
+  return [...bySlug.values()];
 }
 
 function aiForecasts(polymarketForecasts: AiForecast[], kalshiMarketsBySeries: JsonRecord[][], pascalMarkets: JsonRecord[]) {
@@ -569,8 +618,18 @@ function aiForecasts(polymarketForecasts: AiForecast[], kalshiMarketsBySeries: J
     { company: "Anthropic", model: "Next Mythos-Class", query: "", slug: "", color: "coral", source: "Kalshi", sourceUrl: "https://kalshi.com/markets/kxclaude", points: mythosPoints, status: mythosPoints.length ? "live" : "no_active_market" },
     { company: "Google", model: "Gemini 3.5 Pro", query: "", slug: "", color: "blue", source: "Kalshi", sourceUrl: "https://kalshi.com/markets/kxgemini", points: geminiPoints, status: geminiPoints.length ? "live" : "no_active_market" },
     { company: "xAI", model: "Grok 4.7", query: "", slug: "", color: "mono", source: "Kalshi", sourceUrl: "https://kalshi.com/markets/kxgrok", points: grok47Points, status: grok47Points.length ? "live" : "no_active_market" },
-  ].filter((forecast) => forecast.points.length >= 2);
-  forecasts = [...forecasts, ...kalshiOnly].filter((forecast) => forecast.points.length >= 2).sort((a, b) => a.company.localeCompare(b.company) || a.model.localeCompare(b.model));
+  ];
+  const merged = new Map<string, AiForecast>();
+  for (const forecast of [...forecasts, ...kalshiOnly]) {
+    const key = `${forecast.company}\u0000${forecast.model}`;
+    const existing = merged.get(key);
+    if (!existing) merged.set(key, { ...forecast, status: forecast.points.length >= 2 ? "live" : "insufficient_evidence" });
+    else {
+      const points = [...existing.points, ...forecast.points].sort((a, b) => (a.deadline ?? "").localeCompare(b.deadline ?? ""));
+      merged.set(key, { ...existing, source: [...new Set(points.map((point) => point.venue))].join(" + "), points, status: points.length >= 2 ? "live" : "insufficient_evidence" });
+    }
+  }
+  forecasts = [...merged.values()].sort((a, b) => a.company.localeCompare(b.company) || a.model.localeCompare(b.model));
   const pascalGpt = pascalMarkets.filter((market) => stringValue(market.symbol).startsWith("GPT6_RELEASED_BY.")).map(pascalQuote).filter((quote): quote is MarketQuote => quote != null && quote.deadline != null && new Date(quote.deadline).getTime() >= Date.now() - 86400000).map((quote) => ({ ...quote, title: `${quote.title} · mirrors Polymarket` })).sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime());
   return { forecasts, evidence: [...forecasts.flatMap((forecast) => forecast.points), ...pascalGpt] };
 }
@@ -698,6 +757,78 @@ async function treasuryCurve() {
   return buildTreasuryCurve(responses.flatMap((xml) => parseTreasuryYieldXml(xml, true)));
 }
 
+type OfficialRelease = { label: string; releaseAt: string; source: string; sourceUrl: string };
+
+function easternTimeIso(year: number, month: number, day: number, hour: number, minute: number) {
+  const guess = Date.UTC(year, month - 1, day, hour, minute);
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(guess));
+  const values = Object.fromEntries(parts.map((part) => [part.type, Number(part.value)]));
+  const displayedAsUtc = Date.UTC(values.year, values.month - 1, values.day, values.hour, values.minute);
+  return new Date(guess - (displayedAsUtc - guess)).toISOString();
+}
+
+const monthNumber: Record<string, number> = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+
+export function parseBlsCpiHtml(html: string): OfficialRelease[] {
+  return [...html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)].flatMap((row) => {
+    const cells = [...row[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)].map((cell) => cell[1].replace(/<[^>]+>/g, " ").replace(/&nbsp;|&#160;/g, " ").replace(/\s+/g, " ").trim());
+    if (cells.length < 3) return [];
+    const date = cells[1].match(/([A-Za-z]{3,})\.?\s+(\d{1,2}),\s*(\d{4})/);
+    const time = cells[2].match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+    if (!date || !time) return [];
+    const month = monthNumber[date[1].slice(0, 3).toLowerCase()];
+    let hour = Number(time[1]) % 12;
+    if (time[3].toUpperCase() === "PM") hour += 12;
+    if (!month) return [];
+    return [{ label: `CPI · ${cells[0].toUpperCase()}`, releaseAt: easternTimeIso(Number(date[3]), month, Number(date[2]), hour, Number(time[2])), source: "BLS official calendar", sourceUrl: BLS_CPI_SCHEDULE }];
+  });
+}
+
+export function parseBlsCpiIcs(ics: string): OfficialRelease[] {
+  const unfolded = ics.replace(/\r?\n[ \t]/g, "");
+  return unfolded.split("BEGIN:VEVENT").slice(1).flatMap((event) => {
+    const summary = event.match(/^SUMMARY:(.+)$/mi)?.[1]?.replace(/\\,/g, ",").trim() ?? "";
+    if (!/^Consumer Price Index/i.test(summary)) return [];
+    const raw = event.match(/^DTSTART(?:;[^:]*)?:(\d{8}T\d{6}Z?)$/mi)?.[1];
+    if (!raw) return [];
+    const match = raw.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z?)$/);
+    if (!match) return [];
+    const iso = match[7] ? new Date(Date.UTC(+match[1], +match[2] - 1, +match[3], +match[4], +match[5], +match[6])).toISOString() : easternTimeIso(+match[1], +match[2], +match[3], +match[4], +match[5]);
+    const reference = summary.split(",").slice(1).join(",").trim().toUpperCase();
+    return [{ label: `CPI${reference ? ` · ${reference}` : ""}`, releaseAt: iso, source: "BLS official calendar", sourceUrl: BLS_CPI_SCHEDULE }];
+  });
+}
+
+export function parseBeaPceSchedule(value: unknown): OfficialRelease[] {
+  const dates = record(value)["Personal Income and Outlays"];
+  return [...new Set(arrayValue(record(dates).release_dates).map(stringValue))].flatMap((date) => {
+    const timestamp = Date.parse(date);
+    return Number.isFinite(timestamp) ? [{ label: "PCE", releaseAt: new Date(timestamp).toISOString(), source: "BEA official calendar", sourceUrl: "https://www.bea.gov/news/schedule" }] : [];
+  });
+}
+
+async function blsCpiSchedule() {
+  try {
+    const releases = parseBlsCpiHtml(await fetchText(BLS_CPI_SCHEDULE, "text/html", 8000));
+    if (!releases.length) throw new Error("BLS CPI calendar contained no releases");
+    return releases;
+  } catch {
+    const releases = parseBlsCpiIcs(await fetchText(BLS_RELEASE_ICS, "text/calendar", 8000));
+    if (!releases.length) throw new Error("BLS CPI calendar contained no releases");
+    return releases;
+  }
+}
+
+async function beaPceSchedule() {
+  const releases = parseBeaPceSchedule(await fetchJson(BEA_RELEASE_DATES, 8000));
+  if (!releases.length) throw new Error("BEA PCE calendar contained no releases");
+  return releases;
+}
+
+function nextOfficialRelease(releases: OfficialRelease[], now = Date.now()) {
+  return releases.filter((release) => Date.parse(release.releaseAt) > now).sort((a, b) => a.releaseAt.localeCompare(b.releaseAt))[0] ?? null;
+}
+
 type FedData = {
   effectiveRate: Awaited<ReturnType<typeof effectiveRate>>;
   inflation: Awaited<ReturnType<typeof inflationMetrics>>;
@@ -712,7 +843,7 @@ type FedData = {
 type AiData = ReturnType<typeof aiForecasts>;
 
 export async function getFedSnapshot(force = false): Promise<DataSnapshot<FedData>> {
-  const [pascal, polymarket, kalshi, nowcasts, inflation, rate, sofrPath, treasury] = await Promise.all([
+  const [pascal, polymarket, kalshi, nowcasts, inflation, rate, sofrPath, treasury, blsSchedule, beaSchedule] = await Promise.all([
     loadProvider("pascal-markets", "Pascal Fed decisions", CACHE_TTL.markets, pascalData, force),
     loadProvider("fed-polymarket", "Polymarket Fed decisions", CACHE_TTL.markets, polymarketFedDecisions, force),
     loadProvider("fed-kalshi", "Kalshi Fed decisions", CACHE_TTL.markets, kalshiFedDecisions, force),
@@ -721,6 +852,8 @@ export async function getFedSnapshot(force = false): Promise<DataSnapshot<FedDat
     loadProvider("fed-effective-rate", "New York Fed effective rate", CACHE_TTL.rates, effectiveRate, force),
     loadProvider("fed-atlanta-mpt", "Atlanta Fed SOFR options model", CACHE_TTL.dailyMarketData, atlantaMpt, force),
     loadProvider("fed-treasury-curve", "U.S. Treasury yield curve", CACHE_TTL.dailyMarketData, treasuryCurve, force),
+    loadProvider("fed-bls-cpi-schedule", "BLS CPI release calendar", CACHE_TTL.schedules, blsCpiSchedule, force),
+    loadProvider("fed-bea-pce-schedule", "BEA PCE release calendar", CACHE_TTL.schedules, beaPceSchedule, force),
   ]);
   const pascalMarkets = pascal.value ?? [];
   const polymarketDecisions = polymarket.value ?? [];
@@ -728,7 +861,8 @@ export async function getFedSnapshot(force = false): Promise<DataSnapshot<FedDat
   const pascalDecisions = pascalFedDecisions(pascalMarkets);
   const nowcastValues = nowcasts.value ?? new Map<string, { value: number; period: string }>();
   const inflationValues = applyInflationNowcasts(inflation.value ?? [], nowcastValues);
-  const sources = [pascal.health, polymarket.health, kalshi.health, nowcasts.health, inflation.health, rate.health, sofrPath.health, treasury.health];
+  const sources = [pascal.health, polymarket.health, kalshi.health, nowcasts.health, inflation.health, rate.health, sofrPath.health, treasury.health, blsSchedule.health, beaSchedule.health];
+  const releases = [nextOfficialRelease(blsSchedule.value ?? []), nextOfficialRelease(beaSchedule.value ?? [])].filter((release): release is OfficialRelease => release != null).sort((a, b) => a.releaseAt.localeCompare(b.releaseAt));
 
   return {
     generatedAt: new Date().toISOString(),
@@ -744,10 +878,7 @@ export async function getFedSnapshot(force = false): Promise<DataSnapshot<FedDat
         { venue: "Pascal", status: pascalDecisions.length ? "live" : "unavailable", sourceUrl: "https://app.pascal.trade/", note: "Mirrors Polymarket contracts" },
         { venue: "Kalshi", status: kalshiDecisions.length ? "live" : "no_active_market", sourceUrl: "https://kalshi.com/markets" },
       ],
-      releases: [
-        { label: "CPI · JUL 2026", releaseAt: "2026-08-12T12:30:00.000Z", source: "BLS official calendar", sourceUrl: "https://www.bls.gov/schedule/news_release/cpi.htm" },
-        { label: "PCE · JUL 2026", releaseAt: "2026-08-26T12:30:00.000Z", source: "BEA official calendar", sourceUrl: "https://www.bea.gov/news/schedule" },
-      ].filter((release) => new Date(release.releaseAt).getTime() > Date.now()),
+      releases,
       sofrPath: sofrPath.value ?? null,
       treasury: treasury.value ?? null,
     },

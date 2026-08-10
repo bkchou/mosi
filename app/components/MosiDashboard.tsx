@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { buildConsensus, buildExpectedPolicyPath, fitDatedForecast, percentagesToTenths, timePosition } from "../lib/marketMath";
+import { mergeWithLocalCache, storedCache, type CacheEnvelope, type LocalFallback, type StoredFeedCache } from "../lib/localFeedCache";
+import { buildMedianHistory, weeklyMedianMovement, type PriceHistoryPoint } from "../lib/forecastHistory";
 
 type Screen = "fed" | "models";
 type Venue = "Polymarket" | "Kalshi" | "Pascal";
@@ -16,6 +18,7 @@ type MarketQuote = {
   deadline: string | null;
   quoteKind: string;
   symbol?: string;
+  tokenId?: string;
 };
 
 type Outcome = { label: string; probability: number; quote: MarketQuote };
@@ -56,10 +59,32 @@ function pct(value: number) {
   return `${value < 1 && value > 0 ? value.toFixed(1) : value.toFixed(0)}%`;
 }
 
+function readDeviceCache(screen: Screen): StoredFeedCache | null {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(`mosi-feed-v1-${screen}`) ?? "null") as StoredFeedCache | null;
+    return parsed?.version === 1 ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function cacheAge(value: string) {
+  const minutes = Math.max(0, Math.round((Date.now() - Date.parse(value)) / 60_000));
+  return minutes < 60 ? `${minutes} min old` : `${Math.floor(minutes / 60)}h ${minutes % 60}m old`;
+}
+
 export function MosiDashboard({ screen }: { screen: Screen }) {
   const [feed, setFeed] = useState<FeedEnvelope<FedData | AiData> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [localFallbacks, setLocalFallbacks] = useState<LocalFallback[]>([]);
+
+  const acceptFeed = useCallback((payload: FeedEnvelope<FedData | AiData>) => {
+    const merged = mergeWithLocalCache(screen, payload as unknown as CacheEnvelope, readDeviceCache(screen));
+    setFeed(merged.feed as unknown as FeedEnvelope<FedData | AiData>);
+    setLocalFallbacks(merged.fallbacks);
+    try { localStorage.setItem(`mosi-feed-v1-${screen}`, JSON.stringify(storedCache(merged.feed, merged.providerFetchedAt))); } catch { /* Live data remains usable when device storage is unavailable. */ }
+  }, [screen]);
 
   const loadFeed = useCallback(async (force = false) => {
     setLoading(true);
@@ -68,27 +93,23 @@ export function MosiDashboard({ screen }: { screen: Screen }) {
       const path = screen === "fed" ? "/api/fed" : "/api/ai";
       const response = await fetch(force ? `${path}?refresh=${Date.now()}` : path, { headers: { accept: "application/json" } });
       if (!response.ok) throw new Error(`Data endpoint returned ${response.status}`);
-      setFeed(await response.json() as FeedEnvelope<FedData | AiData>);
+      acceptFeed(await response.json() as FeedEnvelope<FedData | AiData>);
     } catch (reason) {
+      const cached = readDeviceCache(screen);
+      if (cached && Date.now() - Date.parse(cached.feed.generatedAt) <= 6 * 60 * 60 * 1000) {
+        setFeed({ ...cached.feed, status: "stale", sources: cached.feed.sources.map((source) => ({ ...source, status: "stale", note: "Using this device's last successful snapshot." })) } as unknown as FeedEnvelope<FedData | AiData>);
+        setLocalFallbacks(Object.entries(cached.providerFetchedAt).filter(([source, fetchedAt]) => source.startsWith("Kalshi") && Date.now() - Date.parse(fetchedAt) <= 6 * 60 * 60 * 1000).map(([source, cachedAt]) => ({ source, cachedAt })));
+      }
       setError(reason instanceof Error ? reason.message : "Live data unavailable");
     } finally {
       setLoading(false);
     }
-  }, [screen]);
+  }, [acceptFeed, screen]);
 
   useEffect(() => {
-    let active = true;
-    const path = screen === "fed" ? "/api/fed" : "/api/ai";
-    fetch(path, { headers: { accept: "application/json" } })
-      .then((response) => {
-        if (!response.ok) throw new Error(`Data endpoint returned ${response.status}`);
-        return response.json() as Promise<FeedEnvelope<FedData | AiData>>;
-      })
-      .then((payload) => { if (active) { setFeed(payload); setError(null); } })
-      .catch((reason: unknown) => { if (active) setError(reason instanceof Error ? reason.message : "Live data unavailable"); })
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, [screen]);
+    const timer = window.setTimeout(() => void loadFeed(false), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadFeed]);
 
   const visibleStatus = loading ? "syncing" : error ? feed ? "stale" : "retry" : feed?.status === "live" ? "current" : feed?.status ?? "syncing";
   const statusTitle = feed ? `${feed.status === "live" ? "CURRENT" : feed.status.toUpperCase()} data · checked ${fmtTime(feed.generatedAt)} · ${feed.sources.map((source) => `${source.source}: ${source.status}`).join(", ")}. Click to refresh.` : "Refresh data";
@@ -116,6 +137,8 @@ export function MosiDashboard({ screen }: { screen: Screen }) {
             <p className="dek">{screen === "fed" ? "Two views of where rates may go—prediction-market meeting outcomes and the options-implied SOFR path—followed by observed inflation and next estimates." : "Dated prediction-market contracts on one calendar. Every point is a quoted probability—not a generated estimate."}</p>
           </div>
         </section>
+
+        {!!localFallbacks.length && <div className="local-cache-note" role="status"><strong>KALSHI LOCAL SNAPSHOT</strong><span>{cacheAge(localFallbacks.map((item) => item.cachedAt).sort()[0])} · current refresh rate-limited · stored only on this device</span></div>}
 
         {error && !feed ? <EmptyState title="Live data is unavailable" detail={`${error}. No cached or synthetic values are being shown.`} /> : screen === "fed" ? <FedScreen data={fedData ?? null} generatedAt={feed?.generatedAt ?? null} loading={loading} /> : <ModelsScreen data={aiData ?? null} generatedAt={feed?.generatedAt ?? null} loading={loading} />}
       </main>
@@ -327,23 +350,24 @@ type CalendarForecast = Forecast & {
   lastDeadline: number;
   venueCount: number;
   marketCount: number;
+  signalStatus: "fitted" | "unresolved" | "insufficient";
 };
 
-function calendarForecast(forecast: Forecast, now: number): CalendarForecast | null {
+function calendarForecast(forecast: Forecast, now: number): CalendarForecast {
   const futurePoints = forecast.points.filter((point) => point.deadline && new Date(point.deadline).getTime() > now);
-  if (futurePoints.length < 2) return null;
-  const lastDeadline = Math.max(...futurePoints.map((point) => new Date(point.deadline!).getTime()));
-  const fit = fitDatedForecast(forecast.points, now);
-  if (fit) return { ...forecast, ...fit, lastDeadline, source: fit.venues.join(" + ") };
+  const lastDeadline = futurePoints.length ? Math.max(...futurePoints.map((point) => new Date(point.deadline!).getTime())) : now;
   const venues = [...new Set(futurePoints.map((point) => point.venue))];
-  return { ...forecast, median: null, q10: null, q25: null, q75: null, q90: null, lastDeadline, venueCount: venues.length, marketCount: futurePoints.length, source: venues.join(" + ") };
+  if (futurePoints.length < 2) return { ...forecast, median: null, q10: null, q25: null, q75: null, q90: null, lastDeadline, venueCount: venues.length, marketCount: futurePoints.length, source: venues.join(" + ") || forecast.source, signalStatus: "insufficient" };
+  const fit = fitDatedForecast(forecast.points, now);
+  if (fit) return { ...forecast, ...fit, lastDeadline, source: fit.venues.join(" + "), signalStatus: "fitted" };
+  return { ...forecast, median: null, q10: null, q25: null, q75: null, q90: null, lastDeadline, venueCount: venues.length, marketCount: futurePoints.length, source: venues.join(" + "), signalStatus: "unresolved" };
 }
 
 function ModelsScreen({ data, generatedAt, loading }: { data: AiData | null; generatedAt: string | null; loading: boolean }) {
   const [expandedForecast, setExpandedForecast] = useState<string | null>(null);
   const now = useMemo(() => generatedAt ? Date.parse(generatedAt) : 0, [generatedAt]);
   const forecasts = useMemo(() => data?.forecasts ?? [], [data?.forecasts]);
-  const calendarForecasts = useMemo(() => forecasts.map((forecast) => calendarForecast(forecast, now)).filter((forecast): forecast is CalendarForecast => forecast != null).sort((a, b) => (a.median ?? Infinity) - (b.median ?? Infinity) || a.lastDeadline - b.lastDeadline), [forecasts, now]);
+  const calendarForecasts = useMemo(() => forecasts.map((forecast) => calendarForecast(forecast, now)).sort((a, b) => (a.median ?? Infinity) - (b.median ?? Infinity) || a.lastDeadline - b.lastDeadline), [forecasts, now]);
   const fitted = useMemo(() => calendarForecasts.filter((forecast): forecast is CalendarForecast & { median: number } => forecast.median != null), [calendarForecasts]);
   const earliest = fitted[0];
   const bounds = useMemo(() => {
@@ -400,6 +424,14 @@ function CalendarGuides({ bounds, months, now }: { bounds: { start: number; end:
 function ForecastBand({ forecast, bounds, months, now, expanded, onToggle }: { forecast: CalendarForecast; bounds: { start: number; end: number }; months: number[]; now: number; expanded: boolean; onToggle: () => void }) {
   const label = <div className="calendar-label"><span>{forecast.company}</span><strong>{forecast.model}</strong><small>{forecast.source} · {forecast.marketCount} markets</small></div>;
   const score = <div className="calendar-score"><strong>{forecast.venueCount}</strong><span>VENUE{forecast.venueCount === 1 ? "" : "S"}</span><i aria-hidden="true">{expanded ? "−" : "+"}</i></div>;
+  if (forecast.signalStatus === "insufficient") {
+    return <div className={`calendar-item ${forecast.color} insufficient ${expanded ? "expanded" : ""}`}>
+      <button className="calendar-row" type="button" onClick={onToggle} aria-expanded={expanded}>
+        {label}<div className="calendar-track calendar-insufficient"><CalendarGuides bounds={bounds} months={months} now={now} /><strong>INSUFFICIENT EVIDENCE</strong><small>{forecast.marketCount ? "Only one active dated contract" : "No active dated contracts"}</small></div>{score}
+      </button>
+      {expanded && <ForecastDetails forecast={forecast} now={now} />}
+    </div>;
+  }
   if (forecast.median == null || forecast.q10 == null || forecast.q25 == null) {
     const last = timePosition(forecast.lastDeadline, bounds);
     return <div className={`calendar-item ${forecast.color} ${expanded ? "expanded" : ""}`}>
@@ -440,7 +472,8 @@ function ForecastDetails({ forecast, now }: { forecast: CalendarForecast; now: n
   const futurePoints = forecast.points.filter((point) => point.deadline && new Date(point.deadline).getTime() > now).sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime());
   const exact = (value: number | null) => value == null ? `After ${fmtDate(new Date(forecast.lastDeadline).toISOString(), { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}` : fmtDate(new Date(value).toISOString(), { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
   return <div className="contract-drawer">
-    <div className="fit-readout"><span><small>10%</small><strong>{exact(forecast.q10)}</strong></span><span><small>25%</small><strong>{exact(forecast.q25)}</strong></span><span className="primary"><small>50% MEDIAN</small><strong>{exact(forecast.median)}</strong></span><span><small>75%</small><strong>{exact(forecast.q75)}</strong></span><span><small>90%</small><strong>{exact(forecast.q90)}</strong></span></div>
+    {forecast.signalStatus !== "insufficient" && <div className="fit-readout"><span><small>10%</small><strong>{exact(forecast.q10)}</strong></span><span><small>25%</small><strong>{exact(forecast.q25)}</strong></span><span className="primary"><small>50% MEDIAN</small><strong>{exact(forecast.median)}</strong></span><span><small>75%</small><strong>{exact(forecast.q75)}</strong></span><span><small>90%</small><strong>{exact(forecast.q90)}</strong></span></div>}
+    <ForecastHistory forecast={forecast} now={now} />
     <div className="contract-table" role="table" aria-label={`${forecast.model} source contracts`}>
       <div className="contract-table-head" role="row"><span>DEADLINE</span><span>VENUE</span><span>YES</span><span>QUOTE</span><span>ACTIVITY</span><span>MARKET</span></div>
       {futurePoints.map((point) => <a href={point.url} target="_blank" rel="noreferrer" role="row" key={`${point.venue}-${point.symbol ?? point.title}-${point.deadline}`}>
@@ -448,6 +481,34 @@ function ForecastDetails({ forecast, now }: { forecast: CalendarForecast; now: n
       </a>)}
     </div>
   </div>;
+}
+
+function ForecastHistory({ forecast, now }: { forecast: CalendarForecast; now: number }) {
+  const [history, setHistory] = useState<Array<{ observedAt: number; median: number }> | null>(null);
+  const [failed, setFailed] = useState(false);
+  const contracts = useMemo(() => forecast.points.filter((point) => point.venue === "Polymarket" && point.tokenId && point.deadline), [forecast.points]);
+  useEffect(() => {
+    let active = true;
+    if (contracts.length < 2) return;
+    void Promise.all(contracts.slice(0, 12).map(async (contract) => {
+      const response = await fetch(`https://clob.polymarket.com/prices-history?market=${encodeURIComponent(contract.tokenId!)}&interval=1m&fidelity=60`);
+      if (!response.ok) throw new Error(`History returned ${response.status}`);
+      const payload = await response.json() as { history?: Array<{ t: number | string; p: number | string }> };
+      return { deadline: contract.deadline, tokenId: contract.tokenId, history: (payload.history ?? []).map((point) => ({ t: Number(point.t), p: Number(point.p) })).filter((point) => Number.isFinite(point.t) && Number.isFinite(point.p)) as PriceHistoryPoint[] };
+    })).then((values) => { if (active) setHistory(buildMedianHistory(values, now)); }).catch(() => { if (active) setFailed(true); });
+    return () => { active = false; };
+  }, [contracts, now]);
+  if (contracts.length < 2) return <div className="history-empty"><strong>FORECAST MOVEMENT</strong><span>Insufficient Polymarket history for a movement estimate.</span></div>;
+  if (failed) return <div className="history-empty"><strong>FORECAST MOVEMENT</strong><span>Price history is temporarily unavailable.</span></div>;
+  if (!history) return <div className="history-empty"><strong>FORECAST MOVEMENT</strong><span>Loading Polymarket price history…</span></div>;
+  if (history.length < 2) return <div className="history-empty"><strong>FORECAST MOVEMENT</strong><span>Not enough history to compare the median.</span></div>;
+  const movement = weeklyMedianMovement(history);
+  const minX = history[0].observedAt, maxX = history.at(-1)!.observedAt;
+  const medians = history.map((point) => point.median), minY = Math.min(...medians), maxY = Math.max(...medians);
+  const x = (value: number) => 12 + (value - minX) / Math.max(1, maxX - minX) * 476;
+  const y = (value: number) => 82 - (value - minY) / Math.max(1, maxY - minY) * 64;
+  const movementText = movement == null ? "Weekly comparison unavailable" : movement === 0 ? "Median unchanged this week" : `Median moved ${Math.abs(movement)} day${Math.abs(movement) === 1 ? "" : "s"} ${movement < 0 ? "earlier" : "later"} this week`;
+  return <div className="forecast-history"><div><span>POLYMARKET FORECAST MOVEMENT</span><strong>{movementText}</strong><small>Historical median reconstructed from daily closing probabilities.</small></div><svg viewBox="0 0 500 96" role="img" aria-label={movementText}><polyline points={history.map((point) => `${x(point.observedAt)},${y(point.median)}`).join(" ")} /><circle cx={x(history.at(-1)!.observedAt)} cy={y(history.at(-1)!.median)} r="4" /><text x="488" y={Math.max(12, y(history.at(-1)!.median) - 7)} textAnchor="end">{fmtDate(new Date(history.at(-1)!.median).toISOString(), { month: "short", day: "numeric", timeZone: "UTC" })}</text></svg></div>;
 }
 
 function PanelHeading({ kicker, title, aside }: { kicker: string; title: string; aside: string }) {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildTreasuryCurve, overallStatus, parseAtlantaMpt, parseTreasuryYieldXml, readRecentSnapshot, requestForcesRefresh, retainLastLiveSnapshot } from "../functions/api/data.ts";
+import { buildTreasuryCurve, isAffirmativeAiReleaseMarket, isCumulativeAiReleaseEvent, overallStatus, parseAtlantaMpt, parseBeaPceSchedule, parseBlsCpiHtml, parseBlsCpiIcs, parseTreasuryYieldXml, readRecentSnapshot, requestForcesRefresh, retainLastLiveSnapshot } from "../functions/api/data.ts";
 
 const health = (source, status) => ({ source, status, fetchedAt: status === "unavailable" ? null : "2026-08-09T20:00:00.000Z" });
 
@@ -43,6 +43,26 @@ test("parses complete official Treasury curve observations", () => {
   assert.equal(parsed.length, 2);
   assert.equal(parsed[1].period, "2026-08-07");
   assert.equal(parsed[1].values.BC_30YEAR, 4.109999999999999);
+});
+
+test("parses official BLS CPI HTML and Eastern release time", () => {
+  const html = `<table><tr><th>Reference Month</th><th>Release Date</th><th>Release Time</th></tr><tr><td>July 2026</td><td>Aug. 12, 2026</td><td>08:30 AM</td></tr></table>`;
+  assert.deepEqual(parseBlsCpiHtml(html), [{ label: "CPI · JULY 2026", releaseAt: "2026-08-12T12:30:00.000Z", source: "BLS official calendar", sourceUrl: "https://www.bls.gov/schedule/news_release/cpi.htm" }]);
+});
+
+test("parses official BLS ICS and BEA machine-readable PCE schedule", () => {
+  const ics = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:Consumer Price Index, August 2026\r\nDTSTART:20260911T123000Z\r\nEND:VEVENT\r\nEND:VCALENDAR";
+  assert.equal(parseBlsCpiIcs(ics)[0].releaseAt, "2026-09-11T12:30:00.000Z");
+  const bea = parseBeaPceSchedule({ "Personal Income and Outlays": { release_dates: ["2026-08-26T12:30:00+00:00", "bad", "2026-08-26T12:30:00+00:00"] } });
+  assert.equal(bea.length, 1);
+  assert.equal(bea[0].releaseAt, "2026-08-26T12:30:00.000Z");
+});
+
+test("accepts only cumulative affirmative AI release contracts", () => {
+  assert.equal(isCumulativeAiReleaseEvent("Next Google Gemini Pro Model released by...?"), true);
+  assert.equal(isCumulativeAiReleaseEvent("Next Google Gemini Pro Model released on...?"), false);
+  assert.equal(isAffirmativeAiReleaseMarket("Will Gemini Pro be released by August 31, 2026?"), true);
+  assert.equal(isAffirmativeAiReleaseMarket("Will there be no next Gemini Pro release by August 31, 2026?"), false);
 });
 
 test("Treasury rollover tolerates an empty current-year feed and keeps valid comparison labels", () => {
