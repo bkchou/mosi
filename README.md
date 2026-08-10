@@ -5,7 +5,7 @@
 The first two screens cover:
 
 - **The Fed** — a compact consensus distribution from normalized Polymarket and Kalshi meeting outcomes, plus official EFFR and inflation observations.
-- **AI Models** — market-implied 50% dates and central 50%/80% release intervals fitted from multiple dated contracts for each model on one shared calendar; unsupported tails remain open-ended.
+- **AI Models** — exact market-implied median dates and central 50%/80% release intervals fitted from multiple dated contracts on one shared calendar. Venue probabilities are combined before quantiles are calculated, and unsupported tails remain explicitly open-ended.
 
 ## Data sources
 

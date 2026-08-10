@@ -31,6 +31,20 @@ test("leaves forecast tails unresolved when active contracts do not reach them",
   assert.equal(fit.q90, null);
 });
 
+test("combines venue probabilities before finding the implied date", () => {
+  const day = 86400000;
+  const now = Date.UTC(2026, 0, 1);
+  const point = (venue, offset, probability) => ({ venue, probability, deadline: new Date(now + offset * day).toISOString() });
+  const fit = fitDatedForecast([
+    point("Polymarket", 10, 20), point("Polymarket", 20, 80),
+    point("Kalshi", 10, 49), point("Kalshi", 30, 51),
+  ], now);
+  assert.ok(fit);
+  const medianDay = (fit.median - now) / day;
+  assert.ok(medianDay > 15 && medianDay < 16);
+  assert.equal(fit.venueCount, 2);
+});
+
 test("uses the same proportional position for time axes and graph marks", () => {
   const bounds = { start: Date.UTC(2026, 7, 1), end: Date.UTC(2026, 11, 1) };
   const october = Date.UTC(2026, 9, 1);

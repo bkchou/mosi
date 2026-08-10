@@ -243,31 +243,33 @@ type CalendarForecast = Forecast & {
   marketCount: number;
 };
 
-function calendarForecast(forecast: Forecast): CalendarForecast | null {
-  const futurePoints = forecast.points.filter((point) => point.deadline && new Date(point.deadline).getTime() > Date.now());
+function calendarForecast(forecast: Forecast, now: number): CalendarForecast | null {
+  const futurePoints = forecast.points.filter((point) => point.deadline && new Date(point.deadline).getTime() > now);
   if (futurePoints.length < 2) return null;
   const lastDeadline = Math.max(...futurePoints.map((point) => new Date(point.deadline!).getTime()));
-  const fit = fitDatedForecast(forecast.points);
+  const fit = fitDatedForecast(forecast.points, now);
   if (fit) return { ...forecast, ...fit, lastDeadline, source: fit.venues.join(" + ") };
   const venues = [...new Set(futurePoints.map((point) => point.venue))];
   return { ...forecast, median: null, q10: null, q25: null, q75: null, q90: null, lastDeadline, venueCount: venues.length, marketCount: futurePoints.length, source: venues.join(" + ") };
 }
 
 function ModelsScreen({ data, generatedAt, loading }: { data: AiData | null; generatedAt: string | null; loading: boolean }) {
+  const [expandedForecast, setExpandedForecast] = useState<string | null>(null);
+  const now = useMemo(() => generatedAt ? Date.parse(generatedAt) : 0, [generatedAt]);
   const forecasts = useMemo(() => data?.forecasts ?? [], [data?.forecasts]);
-  const calendarForecasts = useMemo(() => forecasts.map(calendarForecast).filter((forecast): forecast is CalendarForecast => forecast != null).sort((a, b) => (a.median ?? Infinity) - (b.median ?? Infinity) || a.lastDeadline - b.lastDeadline), [forecasts]);
+  const calendarForecasts = useMemo(() => forecasts.map((forecast) => calendarForecast(forecast, now)).filter((forecast): forecast is CalendarForecast => forecast != null).sort((a, b) => (a.median ?? Infinity) - (b.median ?? Infinity) || a.lastDeadline - b.lastDeadline), [forecasts, now]);
   const fitted = useMemo(() => calendarForecasts.filter((forecast): forecast is CalendarForecast & { median: number } => forecast.median != null), [calendarForecasts]);
   const earliest = fitted[0];
   const bounds = useMemo(() => {
     const dates = calendarForecasts.flatMap((forecast) => [forecast.q10, forecast.q90, forecast.median, forecast.lastDeadline, ...forecast.points.map((point) => point.deadline ? new Date(point.deadline).getTime() : NaN)]).filter((value): value is number => value != null && Number.isFinite(value));
-    const currentMonth = new Date(); currentMonth.setUTCDate(1); currentMonth.setUTCHours(0, 0, 0, 0);
+    const currentMonth = new Date(now); currentMonth.setUTCDate(1); currentMonth.setUTCHours(0, 0, 0, 0);
     const fiveMonthsOut = new Date(currentMonth); fiveMonthsOut.setUTCMonth(fiveMonthsOut.getUTCMonth() + 5);
     const minDate = dates.length ? Math.min(...dates) : currentMonth.getTime();
     const maxDate = dates.length ? Math.max(...dates) : fiveMonthsOut.getTime();
     const start = new Date(minDate); start.setUTCDate(1); start.setUTCHours(0, 0, 0, 0);
     const end = new Date(maxDate); end.setUTCMonth(end.getUTCMonth() + 1, 1); end.setUTCHours(0, 0, 0, 0);
     return { start: start.getTime(), end: end.getTime() };
-  }, [calendarForecasts]);
+  }, [calendarForecasts, now]);
   const months = useMemo(() => {
     const values: number[] = [];
     const cursor = new Date(bounds.start);
@@ -277,59 +279,88 @@ function ModelsScreen({ data, generatedAt, loading }: { data: AiData | null; gen
 
   return <>
     <section className="model-summary">
-      <div className="summary-copy"><span className="label">EARLIEST 50% IMPLIED DATE</span><strong>{earliest ? fmtDate(new Date(earliest.median).toISOString(), { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" }) : "Not available"}</strong><p>{earliest ? `${earliest.model}, derived from ${earliest.marketCount} live deadline contracts across ${earliest.venueCount} venue${earliest.venueCount === 1 ? "" : "s"}.` : "No release series currently reaches 50% across its active dated contracts."}</p></div>
+      <div className="summary-copy"><span className="label">EARLIEST MARKET-IMPLIED MEDIAN</span><strong>{earliest ? fmtDate(new Date(earliest.median).toISOString(), { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" }) : "Not available"}</strong><p>{earliest ? `${earliest.model}, interpolated from ${earliest.marketCount} live deadline contracts across ${earliest.venueCount} venue${earliest.venueCount === 1 ? "" : "s"}.` : "No release series currently reaches 50% across its active dated contracts."}</p></div>
       <div className="confidence-key"><span><i className="inner" /> 50% band</span><span><i className="outer" /> 80% band</span><span><i className="median" /> 50% date</span></div>
     </section>
 
     <article className="panel calendar-panel">
-      <PanelHeading kicker="SHARED CALENDAR" title="Expected model releases" aside={generatedAt ? `Deadline CDF · ${fmtTime(generatedAt)}` : "Live public contracts"} />
+      <PanelHeading kicker="SHARED CALENDAR" title="Market-implied model releases" aside={generatedAt ? `Exact date interpolation · ${fmtTime(generatedAt)}` : "Live public contracts"} />
       <div className="calendar-wrap">
-        <TimelineAxis bounds={bounds} months={months} />
-        {calendarForecasts.map((forecast) => <ForecastBand forecast={forecast} bounds={bounds} months={months} key={`${forecast.company}-${forecast.model}`} />)}
-        {!calendarForecasts.length && <EmptyState title={loading ? "Fitting dated contracts…" : "No model has enough active dated contracts"} detail="At least two release-by markets are required; no fallback window is shown." compact />}
+        {calendarForecasts.length ? <><TimelineAxis bounds={bounds} months={months} now={now} />{calendarForecasts.map((forecast) => {
+          const key = `${forecast.company}-${forecast.model}`;
+          return <ForecastBand forecast={forecast} bounds={bounds} months={months} now={now} expanded={expandedForecast === key} onToggle={() => setExpandedForecast((current) => current === key ? null : key)} key={key} />;
+        })}</> : <EmptyState title={loading ? "Fitting dated contracts…" : "No model has enough active dated contracts"} detail="At least two release-by markets are required; no fallback window is shown." compact />}
       </div>
-      <div className="calendar-foot"><span>Venues reaching 50% are fitted and equally weighted; rows without a crossing remain open-ended.</span><span><i className="outer" /> 80%</span><span><i className="inner" /> 50%</span><span><i className="median" /> 50% date</span></div>
+      <div className="calendar-foot"><span>Venue probabilities are combined into one monotone deadline curve; exact dates interpolate between quoted contracts. Select a row for the raw markets.</span><span><i className="outer" /> 80%</span><span><i className="inner" /> 50%</span><span><i className="median" /> Median</span></div>
     </article>
 
   </>;
 }
 
-function TimelineAxis({ bounds, months }: { bounds: { start: number; end: number }; months: number[] }) {
+function TimelineAxis({ bounds, months, now }: { bounds: { start: number; end: number }; months: number[]; now: number }) {
   return <div className="calendar-axis"><span className="axis-spacer" /><div className="timeline-axis">{months.map((month, index) => {
     const date = new Date(month);
     const label = fmtDate(date.toISOString(), { month: "short", timeZone: "UTC" }).toUpperCase();
     const showYear = index === 0 || date.getUTCMonth() === 0;
     return <span className={index === 0 ? "first" : index === months.length - 1 ? "last" : ""} style={{ left: `${timePosition(month, bounds)}%` }} key={month}>{label}{showYear ? ` · ${date.getUTCFullYear()}` : ""}</span>;
-  })}</div><span>FIT</span></div>;
+  })}<i className="today-axis" style={{ left: `${timePosition(now, bounds)}%` }}><b>TODAY</b><small>{fmtDate(new Date(now).toISOString(), { month: "short", day: "numeric" }).toUpperCase()}</small></i></div><span>DETAIL</span></div>;
 }
 
-function ForecastBand({ forecast, bounds, months }: { forecast: CalendarForecast; bounds: { start: number; end: number }; months: number[] }) {
-  const label = <a className="calendar-label" href={forecast.sourceUrl} target="_blank" rel="noreferrer"><span>{forecast.company}</span><strong>{forecast.model}</strong><small>{forecast.source} · {forecast.marketCount} markets</small></a>;
+function CalendarGuides({ bounds, months, now }: { bounds: { start: number; end: number }; months: number[]; now: number }) {
+  const today = timePosition(now, bounds);
+  return <><i className="calendar-elapsed" style={{ width: `${today}%` }} />{months.map((month) => <i className="month-rule" style={{ left: `${timePosition(month, bounds)}%` }} key={month} />)}<i className="today-rule" style={{ left: `${today}%` }} /></>;
+}
+
+function ForecastBand({ forecast, bounds, months, now, expanded, onToggle }: { forecast: CalendarForecast; bounds: { start: number; end: number }; months: number[]; now: number; expanded: boolean; onToggle: () => void }) {
+  const label = <div className="calendar-label"><span>{forecast.company}</span><strong>{forecast.model}</strong><small>{forecast.source} · {forecast.marketCount} markets</small></div>;
+  const score = <div className="calendar-score"><strong>{forecast.venueCount}</strong><span>VENUE{forecast.venueCount === 1 ? "" : "S"}</span><i aria-hidden="true">{expanded ? "−" : "+"}</i></div>;
   if (forecast.median == null || forecast.q10 == null || forecast.q25 == null) {
     const last = timePosition(forecast.lastDeadline, bounds);
-    return <div className={`calendar-row ${forecast.color}`}>
-      {label}
-      <div className="calendar-track" aria-label={`${forecast.model}: active release-by contracts do not reach a 50 percent probability through ${fmtDate(new Date(forecast.lastDeadline).toISOString())}`}>
-        {months.map((month) => <i className="month-rule" style={{ left: `${timePosition(month, bounds)}%` }} key={month} />)}
-        <div className="calendar-unresolved" style={{ left: `${last}%`, width: `${100 - last}%` }}><span>50% NOT REACHED</span><small>THROUGH {fmtDate(new Date(forecast.lastDeadline).toISOString(), { month: "short", day: "numeric", timeZone: "UTC" }).toUpperCase()}</small></div>
-      </div>
-      <div className="calendar-score"><strong>{forecast.venueCount}</strong><span>VENUE{forecast.venueCount === 1 ? "" : "S"}</span></div>
+    return <div className={`calendar-item ${forecast.color} ${expanded ? "expanded" : ""}`}>
+      <button className="calendar-row" type="button" onClick={onToggle} aria-expanded={expanded}>
+        {label}
+        <div className="calendar-track" aria-label={`${forecast.model}: active release-by contracts do not reach a 50 percent probability through ${fmtDate(new Date(forecast.lastDeadline).toISOString())}`}>
+          <CalendarGuides bounds={bounds} months={months} now={now} />
+          <div className="calendar-unresolved" style={{ left: `${last}%`, width: `${100 - last}%` }}><span>50% AFTER {fmtDate(new Date(forecast.lastDeadline).toISOString(), { month: "short", day: "numeric", timeZone: "UTC" }).toUpperCase()}</span><small>NOT REACHED BY LAST CONTRACT</small></div>
+        </div>
+        {score}
+      </button>
+      {expanded && <ForecastDetails forecast={forecast} now={now} />}
     </div>;
   }
   const outerLeft = timePosition(forecast.q10, bounds);
-  const outerRight = forecast.q90 == null ? 100 : timePosition(forecast.q90, bounds);
+  const last = timePosition(forecast.lastDeadline, bounds);
+  const outerRight = forecast.q90 == null ? last : timePosition(forecast.q90, bounds);
   const innerLeft = timePosition(forecast.q25, bounds);
-  const innerRight = forecast.q75 == null ? 100 : timePosition(forecast.q75, bounds);
+  const innerRight = forecast.q75 == null ? last : timePosition(forecast.q75, bounds);
   const median = timePosition(forecast.median, bounds);
-  return <div className={`calendar-row ${forecast.color}`}>
-    {label}
-    <div className="calendar-track" aria-label={`${forecast.model}: 50 percent implied date ${fmtDate(new Date(forecast.median).toISOString())}; ${forecast.q75 == null || forecast.q90 == null ? "one or more confidence intervals remain open-ended" : "central 50 percent and 80 percent release intervals"}`}>
-      {months.map((month) => <i className="month-rule" style={{ left: `${timePosition(month, bounds)}%` }} key={month} />)}
-      <div className={`calendar-outer ${forecast.q90 == null ? "open-ended" : ""}`} style={{ left: `${outerLeft}%`, width: `${outerRight - outerLeft}%` }} />
-      <div className={`calendar-inner ${forecast.q75 == null ? "open-ended" : ""}`} style={{ left: `${innerLeft}%`, width: `${innerRight - innerLeft}%` }} />
-      <div className="calendar-median" style={{ left: `${median}%` }}><span>{fmtDate(new Date(forecast.median).toISOString(), { month: "short", day: "numeric", timeZone: "UTC" })}</span></div>
+  return <div className={`calendar-item ${forecast.color} ${expanded ? "expanded" : ""}`}>
+    <button className="calendar-row" type="button" onClick={onToggle} aria-expanded={expanded}>
+      {label}
+      <div className="calendar-track" aria-label={`${forecast.model}: market-implied median date ${fmtDate(new Date(forecast.median).toISOString())}; ${forecast.q75 == null || forecast.q90 == null ? "one or more intervals extend beyond the final active contract" : "central 50 percent and 80 percent release intervals"}`}>
+        <CalendarGuides bounds={bounds} months={months} now={now} />
+        <div className={`calendar-outer ${forecast.q90 == null ? "open-ended" : ""}`} style={{ left: `${outerLeft}%`, width: `${Math.max(0, outerRight - outerLeft)}%` }} />
+        <div className={`calendar-inner ${forecast.q75 == null ? "open-ended" : ""}`} style={{ left: `${innerLeft}%`, width: `${Math.max(0, innerRight - innerLeft)}%` }} />
+        <div className="calendar-median" style={{ left: `${median}%` }}><span>{fmtDate(new Date(forecast.median).toISOString(), { month: "short", day: "numeric", timeZone: "UTC" })}</span></div>
+        {(forecast.q75 == null || forecast.q90 == null) && <span className="calendar-tail-label" style={{ left: `${last}%` }}>AFTER {fmtDate(new Date(forecast.lastDeadline).toISOString(), { month: "short", day: "numeric", timeZone: "UTC" }).toUpperCase()}</span>}
+      </div>
+      {score}
+    </button>
+    {expanded && <ForecastDetails forecast={forecast} now={now} />}
+  </div>;
+}
+
+function ForecastDetails({ forecast, now }: { forecast: CalendarForecast; now: number }) {
+  const futurePoints = forecast.points.filter((point) => point.deadline && new Date(point.deadline).getTime() > now).sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime());
+  const exact = (value: number | null) => value == null ? `After ${fmtDate(new Date(forecast.lastDeadline).toISOString(), { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}` : fmtDate(new Date(value).toISOString(), { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+  return <div className="contract-drawer">
+    <div className="fit-readout"><span><small>10%</small><strong>{exact(forecast.q10)}</strong></span><span><small>25%</small><strong>{exact(forecast.q25)}</strong></span><span className="primary"><small>50% MEDIAN</small><strong>{exact(forecast.median)}</strong></span><span><small>75%</small><strong>{exact(forecast.q75)}</strong></span><span><small>90%</small><strong>{exact(forecast.q90)}</strong></span></div>
+    <div className="contract-table" role="table" aria-label={`${forecast.model} source contracts`}>
+      <div className="contract-table-head" role="row"><span>DEADLINE</span><span>VENUE</span><span>YES</span><span>QUOTE</span><span>ACTIVITY</span><span>MARKET</span></div>
+      {futurePoints.map((point) => <a href={point.url} target="_blank" rel="noreferrer" role="row" key={`${point.venue}-${point.symbol ?? point.title}-${point.deadline}`}>
+        <strong>{fmtDate(point.deadline, { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}</strong><span>{point.venue}</span><b>{pct(point.probability)}</b><span>{point.quoteKind}</span><span>{point.volumeLabel}</span><span className="market-link">OPEN ↗</span>
+      </a>)}
     </div>
-    <div className="calendar-score"><strong>{forecast.venueCount}</strong><span>VENUE{forecast.venueCount === 1 ? "" : "S"}</span></div>
   </div>;
 }
 

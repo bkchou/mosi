@@ -40,43 +40,63 @@ export type DatedForecastPoint = { venue: string; probability: number; deadline:
 export function fitDatedForecast(points: DatedForecastPoint[], now = Date.now()) {
   const byVenue = new Map<string, DatedForecastPoint[]>();
   for (const point of points) byVenue.set(point.venue, [...(byVenue.get(point.venue) ?? []), point]);
-  const venueFits = [...byVenue.entries()].flatMap(([venue, venuePoints]) => {
+  const venueCurves = [...byVenue.entries()].flatMap(([venue, venuePoints]) => {
     let runningProbability = 0;
-    const samples = venuePoints
-      .filter((point) => point.deadline && new Date(point.deadline).getTime() > now)
-      .map((point) => ({ timestamp: new Date(point.deadline!).getTime(), probability: Math.min(.995, Math.max(0, point.probability / 100)) }))
+    const grouped = new Map<number, number[]>();
+    for (const point of venuePoints) {
+      const timestamp = point.deadline ? new Date(point.deadline).getTime() : NaN;
+      if (!Number.isFinite(timestamp) || timestamp <= now) continue;
+      grouped.set(timestamp, [...(grouped.get(timestamp) ?? []), Math.min(.995, Math.max(0, point.probability / 100))]);
+    }
+    const samples = [...grouped.entries()]
+      .map(([timestamp, probabilities]) => ({ timestamp, probability: probabilities.reduce((sum, value) => sum + value, 0) / probabilities.length }))
       .sort((a, b) => a.timestamp - b.timestamp)
       .map((sample) => ({ ...sample, probability: runningProbability = Math.max(runningProbability, sample.probability) }));
-    if (samples.length < 2 || samples.at(-1)!.probability <= 0) return [];
-    const anchored = [{ timestamp: now, probability: 0 }, ...samples];
-    const quantile = (probability: number): number | null => {
-      for (let index = 1; index < anchored.length; index++) {
-        const previous = anchored[index - 1];
-        const current = anchored[index];
-        if (current.probability < probability) continue;
-        const share = current.probability === previous.probability ? 1 : (probability - previous.probability) / (current.probability - previous.probability);
-        return previous.timestamp + share * (current.timestamp - previous.timestamp);
-      }
-      return null;
-    };
-    const q10 = quantile(.1);
-    const q25 = quantile(.25);
-    const median = quantile(.5);
-    if (q10 == null || q25 == null || median == null) return [];
-    return [{ venue, marketCount: samples.length, q10, q25, median, q75: quantile(.75), q90: quantile(.9) }];
+    return samples.length >= 2 && samples.at(-1)!.probability > 0 ? [{ venue, samples }] : [];
   });
-  if (!venueFits.length) return null;
-  const mean = (key: "q10" | "q25" | "median") => venueFits.reduce((sum, fit) => sum + fit[key], 0) / venueFits.length;
-  const optionalMean = (key: "q75" | "q90") => venueFits.every((fit) => fit[key] != null) ? venueFits.reduce((sum, fit) => sum + fit[key]!, 0) / venueFits.length : null;
+  if (!venueCurves.length) return null;
+
+  const commonEnd = Math.min(...venueCurves.map((curve) => curve.samples.at(-1)!.timestamp));
+  const timestamps = [...new Set([now, ...venueCurves.flatMap((curve) => curve.samples.map((sample) => sample.timestamp).filter((timestamp) => timestamp <= commonEnd)), commonEnd])].sort((a, b) => a - b);
+  const interpolate = (samples: Array<{ timestamp: number; probability: number }>, timestamp: number) => {
+    const anchored = [{ timestamp: now, probability: 0 }, ...samples];
+    for (let index = 1; index < anchored.length; index++) {
+      const previous = anchored[index - 1];
+      const current = anchored[index];
+      if (timestamp > current.timestamp) continue;
+      const share = (timestamp - previous.timestamp) / Math.max(1, current.timestamp - previous.timestamp);
+      return previous.probability + share * (current.probability - previous.probability);
+    }
+    return samples.at(-1)!.probability;
+  };
+  let runningProbability = 0;
+  const aggregate = timestamps.map((timestamp) => {
+    const probability = venueCurves.reduce((sum, curve) => sum + interpolate(curve.samples, timestamp), 0) / venueCurves.length;
+    return { timestamp, probability: runningProbability = Math.max(runningProbability, probability) };
+  });
+  const quantile = (probability: number): number | null => {
+    for (let index = 1; index < aggregate.length; index++) {
+      const previous = aggregate[index - 1];
+      const current = aggregate[index];
+      if (current.probability < probability) continue;
+      const share = current.probability === previous.probability ? 1 : (probability - previous.probability) / (current.probability - previous.probability);
+      return previous.timestamp + share * (current.timestamp - previous.timestamp);
+    }
+    return null;
+  };
+  const q10 = quantile(.1);
+  const q25 = quantile(.25);
+  const median = quantile(.5);
+  if (q10 == null || q25 == null || median == null) return null;
   return {
-    q10: mean("q10"),
-    q25: mean("q25"),
-    median: mean("median"),
-    q75: optionalMean("q75"),
-    q90: optionalMean("q90"),
-    venues: venueFits.map((fit) => fit.venue),
-    venueCount: venueFits.length,
-    marketCount: venueFits.reduce((sum, fit) => sum + fit.marketCount, 0),
+    q10,
+    q25,
+    median,
+    q75: quantile(.75),
+    q90: quantile(.9),
+    venues: venueCurves.map((curve) => curve.venue),
+    venueCount: venueCurves.length,
+    marketCount: venueCurves.reduce((sum, curve) => sum + curve.samples.length, 0),
   };
 }
 
