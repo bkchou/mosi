@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mergeWithLocalCache, storedCache } from "../app/lib/localFeedCache.ts";
+import { freshKalshiAiTickers, mergeWithLocalCache, storedCache } from "../app/lib/localFeedCache.ts";
 
 const now = Date.parse("2026-08-10T12:00:00Z");
 const quote = (venue, deadline) => ({ venue, deadline, title: `${venue} quote` });
@@ -39,4 +39,28 @@ test("restores only the Kalshi venue for a current Fed meeting", () => {
   const merged = mergeWithLocalCache("fed", current, stored, now);
   assert.deepEqual(merged.feed.data.decisions[0].venues.map((venue) => venue.venue), ["Polymarket", "Kalshi"]);
   assert.equal(merged.fallbacks.length, 1);
+});
+
+test("reuses exact Kalshi AI tickers only after every series refreshed recently", () => {
+  const cachedAt = "2026-08-10T11:30:00Z";
+  const sources = ["Kalshi GPT contracts", "Kalshi Claude contracts", "Kalshi Gemini contracts", "Kalshi Grok contracts"];
+  const stored = storedCache(envelope([], { forecasts: [{ company: "OpenAI", model: "GPT-6", points: [
+    { venue: "Kalshi", deadline: "2026-09-01", symbol: "KXGPT-OPEN-26SEP01" },
+    { venue: "Kalshi", deadline: "2026-09-01", symbol: "KXCLAUDE-NXTMYTH-26SEP01" },
+    { venue: "Kalshi", deadline: "2026-09-01", symbol: "KXGEMINI-GEMI35P-26SEP01" },
+    { venue: "Kalshi", deadline: "2026-09-01", symbol: "KXGROK-GROK5-26SEP01" },
+    { venue: "Polymarket", deadline: "2026-09-01", symbol: "ignored" },
+  ] }] }), Object.fromEntries(sources.map((source) => [source, cachedAt])));
+  assert.deepEqual(freshKalshiAiTickers(stored, now), ["KXCLAUDE-NXTMYTH-26SEP01", "KXGEMINI-GEMI35P-26SEP01", "KXGPT-OPEN-26SEP01", "KXGROK-GROK5-26SEP01"]);
+  delete stored.providerFetchedAt["Kalshi Grok contracts"];
+  assert.deepEqual(freshKalshiAiTickers(stored, now), []);
+});
+
+test("a one-request ticker refresh does not postpone full series discovery", () => {
+  const discoveredAt = "2026-08-10T06:15:00Z";
+  const sources = ["Kalshi GPT contracts", "Kalshi Claude contracts", "Kalshi Gemini contracts", "Kalshi Grok contracts"];
+  const stored = storedCache(envelope([], { forecasts: [] }), Object.fromEntries(sources.map((source) => [source, discoveredAt])));
+  const batch = envelope(sources.map((source) => ({ source, status: "live", fetchedAt: "2026-08-10T12:00:00Z", note: "One-request cached-ticker refresh." })), { forecasts: [] });
+  const merged = mergeWithLocalCache("models", batch, stored, now);
+  assert.deepEqual(merged.providerFetchedAt, Object.fromEntries(sources.map((source) => [source, discoveredAt])));
 });

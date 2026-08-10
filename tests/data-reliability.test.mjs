@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildTreasuryCurve, isAffirmativeAiReleaseMarket, isCumulativeAiReleaseEvent, overallStatus, parseAtlantaMpt, parseBeaPceSchedule, parseBlsCpiHtml, parseBlsCpiIcs, parseTreasuryYieldXml, readRecentSnapshot, requestForcesRefresh, retainLastLiveSnapshot } from "../functions/api/data.ts";
+import { buildTreasuryCurve, groupKalshiAiMarkets, isAffirmativeAiReleaseMarket, isCumulativeAiReleaseEvent, kalshiAiTickersFromRequest, overallStatus, parseAtlantaMpt, parseBeaPceSchedule, parseBlsCpiHtml, parseBlsCpiIcs, parseTreasuryYieldXml, readRecentSnapshot, requestForcesRefresh, retainLastLiveSnapshot } from "../functions/api/data.ts";
 
 const health = (source, status) => ({ source, status, fetchedAt: status === "unavailable" ? null : "2026-08-09T20:00:00.000Z" });
 
@@ -14,6 +14,13 @@ test("summarizes provider health without calling empty data live", () => {
 test("only explicit refresh requests bypass provider TTLs", () => {
   assert.equal(requestForcesRefresh(new Request("https://mosi.test/api/ai")), false);
   assert.equal(requestForcesRefresh(new Request("https://mosi.test/api/ai?refresh=123")), true);
+});
+
+test("validates and groups a browser-provided Kalshi ticker batch", () => {
+  const request = new Request("https://mosi.test/api/ai?kalshi_tickers=KXGROK-GROK5-26SEP01,bad,KXGPT-OPEN-26SEP01,KXCLAUDE-NXTMYTH-26SEP01,KXGEMINI-GEMI35P-26SEP01,KXGPT-OPEN-26SEP01");
+  assert.deepEqual(kalshiAiTickersFromRequest(request), ["KXCLAUDE-NXTMYTH-26SEP01", "KXGEMINI-GEMI35P-26SEP01", "KXGPT-OPEN-26SEP01", "KXGROK-GROK5-26SEP01"]);
+  assert.deepEqual(kalshiAiTickersFromRequest(new Request("https://mosi.test/api/ai?kalshi_tickers=KXGPT-OPEN-26SEP01")), []);
+  assert.deepEqual(groupKalshiAiMarkets([{ ticker: "KXGPT-OPEN-26SEP01" }, { ticker: "KXGROK-GROK5-26SEP01" }, { ticker: "OTHER" }]).map((rows) => rows.length), [1, 0, 0, 1]);
 });
 
 test("parses Atlanta Fed published SOFR path without synthetic values", () => {

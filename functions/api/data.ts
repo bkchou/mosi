@@ -117,6 +117,7 @@ function arrayValue(value: unknown): unknown[] {
 
 async function loadProvider<T>(key: string, source: string, ttl: number, loader: () => Promise<T>, force = false): Promise<ProviderLoad<T>> {
   const now = Date.now();
+  if (!providerCache.has(key) && providerCache.size >= 64) providerCache.delete(providerCache.keys().next().value!);
   const entry = providerCache.get(key) ?? {};
   providerCache.set(key, entry);
 
@@ -169,6 +170,17 @@ async function loadProvider<T>(key: string, source: string, ttl: number, loader:
       value: undefined as T,
       health: { source, status: "unavailable", fetchedAt: null, note },
     };
+  }
+}
+
+async function loadEphemeralProvider<T>(source: string, loader: () => Promise<T>): Promise<ProviderLoad<T>> {
+  try {
+    return { value: await loader(), health: { source, status: "live", fetchedAt: new Date().toISOString() } };
+  } catch (reason) {
+    const message = reason instanceof Error ? reason.message : "";
+    const status = message.match(/:\s(\d{3})$/)?.[1];
+    const note = status ? `Upstream returned HTTP ${status}.` : /timeout|aborted/i.test(message) ? "Upstream request timed out." : "Source is temporarily unavailable.";
+    return { value: undefined as T, health: { source, status: "unavailable", fetchedAt: null, note } };
   }
 }
 
@@ -270,6 +282,24 @@ async function kalshiMarkets(seriesTicker: string) {
   const query = `series_ticker=${encodeURIComponent(seriesTicker)}&status=open`;
   const payload = record(await fetchJson(`${KALSHI_API}/markets?${query}&limit=1000`, 4000));
   return records(payload.markets).filter((market) => stringValue(market.status) === "active");
+}
+
+export function kalshiAiTickersFromRequest(request: Request | undefined) {
+  if (!request) return [];
+  const raw = new URL(request.url).searchParams.get("kalshi_tickers") ?? "";
+  if (raw.length > 2_000) return [];
+  const tickers = [...new Set(raw.split(",").map((ticker) => ticker.trim().toUpperCase()).filter((ticker) => /^KX(?:GPT|CLAUDE|GEMINI|GROK)-[A-Z0-9-]+$/.test(ticker)))].slice(0, 100).sort();
+  return ["KXGPT-", "KXCLAUDE-", "KXGEMINI-", "KXGROK-"].every((prefix) => tickers.some((ticker) => ticker.startsWith(prefix))) ? tickers : [];
+}
+
+async function kalshiMarketsByTicker(tickers: string[]) {
+  const payload = record(await fetchJson(`${KALSHI_API}/markets?tickers=${encodeURIComponent(tickers.join(","))}&limit=1000`, 4000));
+  return records(payload.markets).filter((market) => stringValue(market.status) === "active");
+}
+
+export function groupKalshiAiMarkets(markets: JsonRecord[]) {
+  const series = ["KXGPT", "KXCLAUDE", "KXGEMINI", "KXGROK"];
+  return series.map((prefix) => markets.filter((market) => stringValue(market.ticker).startsWith(`${prefix}-`)));
 }
 
 async function kalshiFedDecisions() {
@@ -885,7 +915,7 @@ export async function getFedSnapshot(force = false): Promise<DataSnapshot<FedDat
   };
 }
 
-export async function getAiSnapshot(force = false): Promise<DataSnapshot<AiData>> {
+export async function getAiSnapshot(force = false, knownKalshiTickers: string[] = []): Promise<DataSnapshot<AiData>> {
   const polymarketPromise = loadProvider("ai-polymarket", "Polymarket AI contracts", CACHE_TTL.markets, polymarketAiForecasts, force);
   const kalshiConfigs = [
     ["gpt", "GPT", "KXGPT"],
@@ -893,9 +923,15 @@ export async function getAiSnapshot(force = false): Promise<DataSnapshot<AiData>
     ["gemini", "Gemini", "KXGEMINI"],
     ["grok", "Grok", "KXGROK"],
   ] as const;
-  const kalshiLoads: Array<ProviderLoad<JsonRecord[]>> = [];
-  for (const [key, label, series] of kalshiConfigs) {
-    kalshiLoads.push(await loadProvider(`ai-kalshi-${key}`, `Kalshi ${label} contracts`, CACHE_TTL.markets, () => kalshiMarkets(series), force));
+  let kalshiLoads: Array<ProviderLoad<JsonRecord[]>>;
+  if (knownKalshiTickers.length) {
+    const batch = await loadEphemeralProvider("Kalshi cached contract batch", () => kalshiMarketsByTicker(knownKalshiTickers));
+    kalshiLoads = groupKalshiAiMarkets(batch.value ?? []).map((value, index) => ({ value, health: { ...batch.health, source: `Kalshi ${kalshiConfigs[index][1]} contracts`, note: batch.health.note ? `${batch.health.note} One-request cached-ticker refresh.` : "One-request cached-ticker refresh." } }));
+  } else {
+    kalshiLoads = [];
+    for (const [key, label, series] of kalshiConfigs) {
+      kalshiLoads.push(await loadProvider(`ai-kalshi-${key}`, `Kalshi ${label} contracts`, CACHE_TTL.markets, () => kalshiMarkets(series), force));
+    }
   }
   const polymarket = await polymarketPromise;
   const [kalshiGpt, kalshiClaude, kalshiGemini, kalshiGrok] = kalshiLoads;

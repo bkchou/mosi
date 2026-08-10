@@ -280,6 +280,8 @@ h1 { margin: 0; max-width: 940px; font-family: var(--font-newsreader), Georgia, 
 .policy-summary small { color: var(--muted); font: 500 8px/1.3 var(--font-geist-mono); }
 .policy-graph-wrap { padding: 8px 18px 0; overflow-x: auto; }
 .policy-graph-wrap svg { width: 100%; min-width: 820px; height: 280px; display: block; }
+.graph-axis-unit { fill: var(--muted); font: 700 7px var(--font-geist-mono); letter-spacing: .09em; }
+.interactive-point { cursor: crosshair; outline: none; }.interactive-point circle { transition: r .12s ease, filter .12s ease; }.interactive-point:hover circle, .interactive-point:focus circle, circle.interactive-point:hover, circle.interactive-point:focus { filter: drop-shadow(0 0 4px rgba(23,32,29,.55)); stroke-width: 3; }
 .policy-y-tick line, .policy-x-tick line { stroke: #e1e5e0; stroke-width: 1; vector-effect: non-scaling-stroke; }
 .policy-x-tick line { stroke: #edf0ec; }.policy-y-tick text, .policy-x-tick text { fill: #858e89; font: 550 8px var(--font-geist-mono); }.policy-y-tick text { text-anchor: end; }.policy-x-tick text { text-anchor: middle; }
 .current-rate-rule { stroke: #a8afaa; stroke-width: 1; stroke-dasharray: 3 4; vector-effect: non-scaling-stroke; }
@@ -290,8 +292,10 @@ h1 { margin: 0; max-width: 940px; font-family: var(--font-newsreader), Georgia, 
 .policy-current-point text { fill: var(--ink); font: 700 8px var(--font-geist-mono); }.policy-current-point text:last-child { fill: var(--muted); font-weight: 550; }
 .policy-meeting-point circle { fill: var(--panel); stroke: var(--ink); stroke-width: 2.5; vector-effect: non-scaling-stroke; }.policy-meeting-point text { fill: var(--ink); text-anchor: middle; font: 700 8px var(--font-geist-mono); }.policy-meeting-point text.date { fill: var(--muted); font-size: 7px; }
 .policy-sofr-point circle { fill: var(--panel); stroke: var(--accent); stroke-width: 2.5; vector-effect: non-scaling-stroke; }.policy-sofr-point text { fill: var(--accent); text-anchor: middle; font: 700 7px var(--font-geist-mono); }
+.graph-inspector { min-height: 48px; margin: 0 0 8px; padding: 8px 12px; border: 1px solid var(--line); border-left: 3px solid var(--ink); background: #f3f5f1; display: grid; grid-template-columns: minmax(110px, .42fr) minmax(180px, .7fr) 1fr; align-items: center; gap: 14px; font-family: var(--font-geist-mono); }.graph-inspector.sofr { border-left-color: var(--accent); }.graph-inspector span { color: var(--muted); font-size: 7px; font-weight: 700; letter-spacing: .09em; }.graph-inspector strong { font-size: 10px; }.graph-inspector small { color: var(--muted); font-size: 8px; line-height: 1.35; }
+.policy-graph-wrap > .graph-inspector { min-width: 820px; }
 .policy-legend { min-height: 42px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 18px; color: var(--muted); font: 500 8px var(--font-geist-mono); }
-.policy-legend span { display: inline-flex; align-items: center; gap: 6px; }.policy-legend i { width: 18px; height: 2px; background: var(--ink); }.policy-legend i.sofr { background: var(--accent); }.policy-legend i.band { height: 8px; background: rgba(241,102,69,.14); border: 1px solid rgba(241,102,69,.28); }.policy-legend small { margin-left: auto; color: #8a928e; font: inherit; }
+.policy-legend span, .policy-legend a { display: inline-flex; align-items: center; gap: 6px; }.policy-legend a { text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 3px; }.policy-legend a:hover { color: var(--ink); text-decoration-color: currentColor; }.policy-legend i { width: 18px; height: 2px; background: var(--ink); }.policy-legend i.sofr { background: var(--accent); }.policy-legend i.band { height: 8px; background: rgba(241,102,69,.14); border: 1px solid rgba(241,102,69,.28); }.policy-legend small { margin-left: auto; color: #8a928e; font: inherit; }
 .meeting-disclosure, .treasury-disclosure { border-top: 1px solid var(--line); }
 .meeting-disclosure > summary, .treasury-disclosure > summary { list-style: none; cursor: pointer; min-height: 54px; padding: 0 18px; display: flex; align-items: center; justify-content: space-between; gap: 18px; }
 .meeting-disclosure > summary::-webkit-details-marker, .treasury-disclosure > summary::-webkit-details-marker { display: none; }
@@ -305,6 +309,9 @@ h1 { margin: 0; max-width: 940px; font-family: var(--font-newsreader), Georgia, 
 .inflation-path-panel .inflation-history { padding: 10px 18px 8px; }
 .inflation-path-panel .inflation-history svg { height: 244px; min-width: 820px; }
 .inflation-path-panel .inflation-history { overflow-x: auto; }
+.graph-toolbar { min-width: 820px; min-height: 34px; display: flex; align-items: center; justify-content: space-between; gap: 16px; color: var(--muted); font: 600 7px var(--font-geist-mono); letter-spacing: .08em; }.graph-toolbar > div { display: flex; align-items: center; gap: 5px; }.graph-toolbar span { margin-right: 4px; }.graph-toolbar button { min-width: 34px; border: 1px solid var(--line); background: transparent; color: var(--muted); padding: 5px 7px; cursor: pointer; font: 700 8px var(--font-geist-mono); }.graph-toolbar button:hover, .graph-toolbar button.active { border-color: var(--ink); background: var(--ink); color: var(--panel); }
+.forecast-zone { fill: rgba(12,155,101,.055); }
+.inflation-inspector { min-width: 820px; margin-top: 3px; border-left-color: var(--green); }
 .inflation-series .inflation-forecast-line { stroke-dasharray: 5 4; stroke-width: 2; }.inflation-series .forecast-point { fill: var(--panel); stroke: currentColor; stroke-width: 2; vector-effect: non-scaling-stroke; }
 .forecast-boundary line { stroke: #9fa7a2; stroke-width: 1; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke; }.forecast-boundary text { fill: var(--muted); font: 700 7px var(--font-geist-mono); letter-spacing: .08em; }
 .inflation-path-panel .inflation-legend { min-width: 820px; padding-top: 5px; }

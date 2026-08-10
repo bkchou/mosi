@@ -12,6 +12,7 @@ export type StoredFeedCache = { version: 1; feed: CacheEnvelope; providerFetched
 export type LocalFallback = { source: string; cachedAt: string };
 
 const MAX_LOCAL_AGE = 6 * 60 * 60 * 1000;
+const KALSHI_AI_SOURCES = ["Kalshi GPT contracts", "Kalshi Claude contracts", "Kalshi Gemini contracts", "Kalshi Grok contracts"];
 
 function freshEnough(value: string | undefined, now: number) {
   if (!value) return false;
@@ -38,7 +39,7 @@ function kalshiCompany(source: string) {
 export function mergeWithLocalCache(screen: "fed" | "models", current: CacheEnvelope, stored: StoredFeedCache | null, now = Date.now()) {
   const providerFetchedAt = { ...(stored?.providerFetchedAt ?? {}) };
   for (const source of current.sources) {
-    if (source.status === "live") providerFetchedAt[source.source] = source.fetchedAt ?? current.generatedAt;
+    if (source.status === "live" && !source.note?.includes("One-request cached-ticker refresh.")) providerFetchedAt[source.source] = source.fetchedAt ?? current.generatedAt;
   }
   const fallbacks: LocalFallback[] = [];
   if (!stored) return { feed: current, providerFetchedAt, fallbacks };
@@ -91,4 +92,10 @@ export function mergeWithLocalCache(screen: "fed" | "models", current: CacheEnve
 
 export function storedCache(feed: CacheEnvelope, providerFetchedAt: Record<string, string>): StoredFeedCache {
   return { version: 1, feed, providerFetchedAt };
+}
+
+export function freshKalshiAiTickers(stored: StoredFeedCache | null, now = Date.now()) {
+  if (!stored || !KALSHI_AI_SOURCES.every((source) => freshEnough(stored.providerFetchedAt[source], now))) return [];
+  const tickers = [...new Set((stored.feed.data.forecasts ?? []).flatMap((forecast) => forecast.points).filter((point) => point.venue === "Kalshi").map((point) => typeof point.symbol === "string" ? point.symbol : "").filter((ticker) => /^KX(?:GPT|CLAUDE|GEMINI|GROK)-[A-Z0-9-]+$/.test(ticker)))].sort();
+  return ["KXGPT-", "KXCLAUDE-", "KXGEMINI-", "KXGROK-"].every((prefix) => tickers.some((ticker) => ticker.startsWith(prefix))) ? tickers : [];
 }

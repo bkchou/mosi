@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { buildConsensus, buildExpectedPolicyPath, fitDatedForecast, percentagesToTenths, timePosition } from "../lib/marketMath";
-import { mergeWithLocalCache, storedCache, type CacheEnvelope, type LocalFallback, type StoredFeedCache } from "../lib/localFeedCache";
+import { freshKalshiAiTickers, mergeWithLocalCache, storedCache, type CacheEnvelope, type LocalFallback, type StoredFeedCache } from "../lib/localFeedCache";
 import { buildMedianHistory, weeklyMedianMovement, type PriceHistoryPoint } from "../lib/forecastHistory";
 
 type Screen = "fed" | "models";
@@ -91,7 +91,13 @@ export function MosiDashboard({ screen }: { screen: Screen }) {
     setError(null);
     try {
       const path = screen === "fed" ? "/api/fed" : "/api/ai";
-      const response = await fetch(force ? `${path}?refresh=${Date.now()}` : path, { headers: { accept: "application/json" } });
+      const params = new URLSearchParams();
+      if (force) params.set("refresh", String(Date.now()));
+      if (screen === "models") {
+        const tickers = force ? [] : freshKalshiAiTickers(readDeviceCache(screen));
+        if (tickers.length) params.set("kalshi_tickers", tickers.join(","));
+      }
+      const response = await fetch(`${path}${params.size ? `?${params}` : ""}`, { headers: { accept: "application/json" } });
       if (!response.ok) throw new Error(`Data endpoint returned ${response.status}`);
       acceptFeed(await response.json() as FeedEnvelope<FedData | AiData>);
     } catch (reason) {
@@ -178,7 +184,7 @@ function FedScreen({ data, generatedAt, loading }: { data: FedData | null; gener
             <div><span>FURTHEST SOFR MEAN</span><strong>{finalSofr ? `${finalSofr.midpoint.toFixed(2)}%` : "—"}</strong><small>{finalSofr ? fmtDate(`${finalSofr.period}T00:00:00Z`, { month: "short", year: "numeric", timeZone: "UTC" }) : "Atlanta Fed unavailable"}</small></div>
           </div>
           {data?.sofrPath && currentTargetMidpoint != null && generatedAt ? <PolicyPathGraph currentRate={currentTargetMidpoint} effectiveRate={data.effectiveRate?.value ?? null} meetings={policyPath} sofr={data.sofrPath} now={Date.parse(generatedAt)} /> : <EmptyState title={loading ? "Building the forward path…" : "Forward policy path unavailable"} detail="No substitute path is shown." compact />}
-          <details className="meeting-disclosure">
+          <details className="meeting-disclosure" id="fed-meeting-contracts">
             <summary><span>Meeting probabilities and contracts</span><small>{data?.decisions.length ? `${data.decisions.length} meetings · select for exact quotes` : "No active contracts"}</small></summary>
             {data?.decisions.length ? <>
               <div className="decision-tabs" role="tablist" aria-label="Fed meeting">
@@ -215,6 +221,7 @@ function FedScreen({ data, generatedAt, loading }: { data: FedData | null; gener
 type PolicyPathPoint = ReturnType<typeof buildExpectedPolicyPath>[number];
 
 function PolicyPathGraph({ currentRate, effectiveRate, meetings, sofr, now }: { currentRate: number; effectiveRate: number | null; meetings: PolicyPathPoint[]; sofr: SofrPath; now: number }) {
+  const [inspected, setInspected] = useState<{ label: string; value: string; detail: string; kind: "meeting" | "sofr" } | null>(null);
   const width = 1000, height = 280, left = 62, right = 972, top = 24, bottom = 222;
   const sofrPoints = sofr.points.map((point) => ({ ...point, timestamp: Date.parse(`${point.period}T00:00:00Z`) }));
   const meetingPoints = meetings.map((point) => ({ ...point, timestamp: Date.parse(point.meetingDate) }));
@@ -231,19 +238,22 @@ function PolicyPathGraph({ currentRate, effectiveRate, meetings, sofr, now }: { 
   const band = `${sofrPoints.map((point) => `${x(point.timestamp)},${y(point.high)}`).join(" ")} ${[...sofrPoints].reverse().map((point) => `${x(point.timestamp)},${y(point.low)}`).join(" ")}`;
   const sofrLine = sofrPoints.map((point, index) => `${index ? "L" : "M"}${x(point.timestamp)},${y(point.midpoint)}`).join(" ");
   const meetingLine = [{ timestamp: now, expectedRate: currentRate }, ...meetingPoints].map((point, index) => `${index ? "L" : "M"}${x(point.timestamp)},${y(point.expectedRate)}`).join(" ");
+  const inspect = (value: NonNullable<typeof inspected>) => ({ onPointerEnter: () => setInspected(value), onPointerDown: () => setInspected(value), onFocus: () => setInspected(value), onBlur: () => setInspected(null) });
   return <div className="policy-graph-wrap">
-    <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Forward policy-rate path from prediction markets and the Atlanta Fed SOFR options model">
+    <svg viewBox={`0 0 ${width} ${height}`} role="group" aria-label="Forward policy-rate path from prediction markets and the Atlanta Fed SOFR options model">
+      <text className="graph-axis-unit" x="4" y="13">RATE %</text>
       {yTicks.map((tick) => <g className="policy-y-tick" key={tick}><line x1={left} x2={right} y1={y(tick)} y2={y(tick)} /><text x={left - 10} y={y(tick) + 4}>{tick.toFixed(2)}%</text></g>)}
       {monthTicks.map((tick) => <g className="policy-x-tick" key={tick}><line x1={x(tick)} x2={x(tick)} y1={top} y2={bottom} /><text x={x(tick)} y="246">{fmtDate(new Date(tick).toISOString(), { month: "short", year: new Date(tick).getUTCMonth() === 0 ? "2-digit" : undefined, timeZone: "UTC" }).toUpperCase()}</text></g>)}
       <line className="current-rate-rule" x1={left} x2={right} y1={y(currentRate)} y2={y(currentRate)} />
       <polygon className="policy-sofr-band" points={band} />
       <path className="policy-sofr-line" d={sofrLine} />
       <path className="policy-meeting-line" d={meetingLine} />
-      <g className="policy-current-point"><circle cx={x(now)} cy={y(currentRate)} r="5" /><text x={x(now) + 10} y={y(currentRate) - 9}>TODAY · {currentRate.toFixed(2)}%</text>{effectiveRate != null && <text x={x(now) + 10} y={y(currentRate) + 17}>EFFR {effectiveRate.toFixed(2)}%</text>}</g>
-      {meetingPoints.map((point) => <g className="policy-meeting-point" key={point.meetingDate}><circle cx={x(point.timestamp)} cy={y(point.expectedRate)} r="5"><title>{point.label}: {point.expectedRate.toFixed(3)}% implied path; {point.expectedMove >= 0 ? "+" : ""}{point.expectedMove.toFixed(1)} bp expected decision</title></circle><text x={x(point.timestamp)} y={y(point.expectedRate) - 11}>{point.expectedRate.toFixed(2)}%</text><text className="date" x={x(point.timestamp)} y={y(point.expectedRate) + 18}>{fmtDate(point.meetingDate, { month: "short", day: "numeric", timeZone: "UTC" }).toUpperCase()}</text></g>)}
-      {sofrPoints.map((point) => <g className="policy-sofr-point" key={point.period}><circle cx={x(point.timestamp)} cy={y(point.midpoint)} r="4"><title>Atlanta Fed 3-month SOFR mean {point.midpoint.toFixed(2)}%; 25–75% range {point.low.toFixed(2)}–{point.high.toFixed(2)}%</title></circle><text x={x(point.timestamp)} y={y(point.midpoint) + 18}>{point.midpoint.toFixed(2)}%</text></g>)}
+      <g className="policy-current-point interactive-point" tabIndex={0} role="img" aria-label={`Current target midpoint ${currentRate.toFixed(3)} percent${effectiveRate == null ? "" : `, effective federal funds rate ${effectiveRate.toFixed(3)} percent`}`} {...inspect({ label: "TODAY", value: `${currentRate.toFixed(3)}% target midpoint`, detail: effectiveRate == null ? "EFFR unavailable" : `${effectiveRate.toFixed(3)}% effective federal funds rate`, kind: "meeting" })}><circle cx={x(now)} cy={y(currentRate)} r="5" /><text x={x(now) + 10} y={y(currentRate) - 9}>TODAY · {currentRate.toFixed(2)}%</text>{effectiveRate != null && <text x={x(now) + 10} y={y(currentRate) + 17}>EFFR {effectiveRate.toFixed(2)}%</text>}</g>
+      {meetingPoints.map((point) => <g className="policy-meeting-point interactive-point" tabIndex={0} role="img" aria-label={`${point.label}, ${point.expectedRate.toFixed(3)} percent expected target midpoint, ${point.expectedMove >= 0 ? "+" : ""}${point.expectedMove.toFixed(1)} basis points expected decision`} {...inspect({ label: `${fmtDate(point.meetingDate, { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" })} FOMC`, value: `${point.expectedRate.toFixed(3)}% expected target midpoint`, detail: `${point.expectedMove >= 0 ? "+" : ""}${point.expectedMove.toFixed(1)} bp expected decision`, kind: "meeting" })} key={point.meetingDate}><circle cx={x(point.timestamp)} cy={y(point.expectedRate)} r="5" /><text x={x(point.timestamp)} y={y(point.expectedRate) - 11}>{point.expectedRate.toFixed(2)}%</text><text className="date" x={x(point.timestamp)} y={y(point.expectedRate) + 18}>{fmtDate(point.meetingDate, { month: "short", day: "numeric", timeZone: "UTC" }).toUpperCase()}</text></g>)}
+      {sofrPoints.map((point) => <g className="policy-sofr-point interactive-point" tabIndex={0} role="img" aria-label={`${fmtDate(`${point.period}T00:00:00Z`, { month: "long", year: "numeric", timeZone: "UTC" })}, expected three-month SOFR ${point.midpoint.toFixed(3)} percent, interquartile range ${point.low.toFixed(3)} to ${point.high.toFixed(3)} percent`} {...inspect({ label: `${fmtDate(`${point.period}T00:00:00Z`, { month: "long", year: "numeric", timeZone: "UTC" })} 3-month SOFR`, value: `${point.midpoint.toFixed(3)}% expected`, detail: `${point.low.toFixed(3)}–${point.high.toFixed(3)}% interquartile range`, kind: "sofr" })} key={point.period}><circle cx={x(point.timestamp)} cy={y(point.midpoint)} r="4" /><text x={x(point.timestamp)} y={y(point.midpoint) + 18}>{point.midpoint.toFixed(2)}%</text></g>)}
     </svg>
-    <div className="policy-legend"><span><i className="meetings" /> Prediction-market expected target path</span><span><i className="sofr" /> Atlanta Fed expected 3-month SOFR</span><span><i className="band" /> SOFR 25–75% range</span><small>50+ bp outcomes represented at ±50 bp</small></div>
+    <div className={`graph-inspector ${inspected?.kind ?? ""}`} aria-live="polite"><span>{inspected?.label ?? "EXACT VALUES"}</span><strong>{inspected?.value ?? "Hover, tap, or focus any point"}</strong><small>{inspected?.detail ?? "Black is the expected Fed target midpoint; orange is expected 3-month SOFR."}</small></div>
+    <div className="policy-legend"><a href="#fed-meeting-contracts"><i className="meetings" /> Prediction-market target path ↓</a><a href={sofr.sourceUrl} target="_blank" rel="noreferrer"><i className="sofr" /> Atlanta Fed 3-month SOFR ↗</a><span><i className="band" /> SOFR 25–75% range</span><small>50+ bp outcomes represented at ±50 bp</small></div>
   </div>;
 }
 
@@ -288,11 +298,16 @@ const inflationGraphColors: Record<string, string> = {
 };
 
 function InflationHistory({ metrics }: { metrics: InflationMetric[] }) {
-  const series = metrics.filter((metric) => inflationGraphColors[metric.seriesId] && metric.history.length > 1);
+  const [rangeMonths, setRangeMonths] = useState<12 | 36>(36);
+  const [inspected, setInspected] = useState<{ label: string; value: string; detail: string } | null>(null);
+  const fullSeries = metrics.filter((metric) => inflationGraphColors[metric.seriesId] && metric.history.length > 1);
+  const fullPoints = fullSeries.flatMap((metric) => metric.history.map((point) => new Date(`${point.period}T00:00:00Z`).getTime()));
+  const observedEnd = fullPoints.length ? Math.max(...fullPoints) : 0;
+  const cutoff = new Date(observedEnd); cutoff.setUTCMonth(cutoff.getUTCMonth() - rangeMonths);
+  const series = fullSeries.map((metric) => ({ ...metric, history: metric.history.filter((point) => Date.parse(`${point.period}T00:00:00Z`) >= cutoff.getTime()) })).filter((metric) => metric.history.length > 1);
   const points = series.flatMap((metric) => metric.history.map((point) => ({ ...point, timestamp: new Date(`${point.period}T00:00:00Z`).getTime() })));
   if (!points.length) return null;
   const start = Math.min(...points.map((point) => point.timestamp));
-  const observedEnd = Math.max(...points.map((point) => point.timestamp));
   const forecasts = series.flatMap((metric) => metric.nextEstimate != null && metric.nextEstimatePeriod ? [{ timestamp: Date.parse(`${metric.nextEstimatePeriod}T00:00:00Z`), value: metric.nextEstimate }] : []);
   const end = Math.max(observedEnd, ...forecasts.map((point) => point.timestamp));
   const values = [...points.map((point) => point.value), ...forecasts.map((point) => point.value)];
@@ -305,8 +320,12 @@ function InflationHistory({ metrics }: { metrics: InflationMetric[] }) {
   const monthTicks: number[] = [];
   const cursor = new Date(start); cursor.setUTCMonth(cursor.getUTCMonth() + 1, 1); cursor.setUTCHours(0, 0, 0, 0);
   while (cursor.getTime() <= end) { if (cursor.getUTCMonth() === 0 || cursor.getUTCMonth() === 6) monthTicks.push(cursor.getTime()); cursor.setUTCMonth(cursor.getUTCMonth() + 1); }
+  const inspect = (value: NonNullable<typeof inspected>) => ({ onPointerEnter: () => setInspected(value), onPointerDown: () => setInspected(value), onFocus: () => setInspected(value), onBlur: () => setInspected(null) });
   return <div className="inflation-history">
-    <svg viewBox="0 0 1000 244" role="img" aria-label="Historical year-over-year inflation rates with next-period Cleveland Fed nowcasts">
+    <div className="graph-toolbar"><div><span>VIEW</span><button type="button" aria-pressed={rangeMonths === 12} className={rangeMonths === 12 ? "active" : ""} onClick={() => setRangeMonths(12)}>1Y</button><button type="button" aria-pressed={rangeMonths === 36} className={rangeMonths === 36 ? "active" : ""} onClick={() => setRangeMonths(36)}>3Y</button></div><small>HOVER / TAP FOR EXACT VALUES · DRAG HORIZONTALLY ON SMALL SCREENS</small></div>
+    <svg viewBox="0 0 1000 244" role="group" aria-label="Historical year-over-year inflation rates with next-period Cleveland Fed nowcasts">
+      <text className="graph-axis-unit" x="4" y="13">YOY %</text>
+      {end > observedEnd && <rect className="forecast-zone" x={x(observedEnd)} y={plot.top} width={Math.max(0, x(end) - x(observedEnd))} height={plot.bottom - plot.top} />}
       {ticks.map((tick) => <g className="inflation-y-tick" key={tick}><line x1={plot.left} x2={plot.right} y1={y(tick)} y2={y(tick)} /><text x={plot.left - 8} y={y(tick) + 3}>{tick}%</text></g>)}
       {monthTicks.map((tick) => <g className="inflation-x-tick" key={tick}><line x1={x(tick)} x2={x(tick)} y1={plot.top} y2={plot.bottom} /><text x={x(tick)} y="231">{fmtDate(new Date(tick).toISOString(), { month: "short", year: new Date(tick).getUTCMonth() === 0 ? "2-digit" : undefined, timeZone: "UTC" }).toUpperCase()}</text></g>)}
       {end > observedEnd && <g className="forecast-boundary"><line x1={x(observedEnd)} x2={x(observedEnd)} y1={plot.top} y2={plot.bottom} /><text x={x(observedEnd) + 7} y={plot.top + 10}>NEXT ESTIMATE</text></g>}
@@ -322,12 +341,13 @@ function InflationHistory({ metrics }: { metrics: InflationMetric[] }) {
         const nextTime = metric.nextEstimatePeriod ? Date.parse(`${metric.nextEstimatePeriod}T00:00:00Z`) : null;
         return <g className="inflation-series" style={{ color: inflationGraphColors[metric.seriesId] }} key={metric.seriesId}>
           {segments.map((segment, segmentIndex) => <path d={segment.map((point, index) => `${index ? "L" : "M"}${x(Date.parse(`${point.period}T00:00:00Z`)).toFixed(1)},${y(point.value).toFixed(1)}`).join(" ")} key={segmentIndex} />)}
-          {metric.history.map((point) => <circle cx={x(new Date(`${point.period}T00:00:00Z`).getTime())} cy={y(point.value)} r="5" key={point.period}><title>{metric.label} · {fmtDate(`${point.period}T00:00:00Z`, { month: "long", year: "numeric", timeZone: "UTC" })}: {point.value.toFixed(2)}%</title></circle>)}
+          {metric.history.map((point) => <circle className="interactive-point" tabIndex={0} role="img" aria-label={`${metric.label}, ${fmtDate(`${point.period}T00:00:00Z`, { month: "long", year: "numeric", timeZone: "UTC" })}, ${point.value.toFixed(2)} percent, observed ${metric.source}`} {...inspect({ label: metric.label, value: `${point.value.toFixed(2)}%`, detail: `${fmtDate(`${point.period}T00:00:00Z`, { month: "long", year: "numeric", timeZone: "UTC" })} · observed ${metric.source}` })} cx={x(new Date(`${point.period}T00:00:00Z`).getTime())} cy={y(point.value)} r="6" key={point.period} />)}
           <circle className="latest-point" cx={x(latestTime)} cy={y(latest.value)} r="3" />
-          {metric.nextEstimate != null && nextTime != null && <><path className="inflation-forecast-line" d={`M${x(latestTime)},${y(latest.value)} L${x(nextTime)},${y(metric.nextEstimate)}`} /><circle className="forecast-point" cx={x(nextTime)} cy={y(metric.nextEstimate)} r="4"><title>{metric.label} next estimate: {metric.nextEstimate.toFixed(2)}% · {metric.nextEstimateSource}</title></circle></>}
+          {metric.nextEstimate != null && nextTime != null && <><path className="inflation-forecast-line" d={`M${x(latestTime)},${y(latest.value)} L${x(nextTime)},${y(metric.nextEstimate)}`} /><circle className="forecast-point interactive-point" tabIndex={0} role="img" aria-label={`${metric.label} next estimate ${metric.nextEstimate.toFixed(2)} percent, ${metric.nextEstimateSource}`} {...inspect({ label: `${metric.label} · NEXT ESTIMATE`, value: `${metric.nextEstimate.toFixed(2)}%`, detail: `${fmtDate(`${metric.nextEstimatePeriod}T00:00:00Z`, { month: "long", year: "numeric", timeZone: "UTC" })} · ${metric.nextEstimateSource}` })} cx={x(nextTime)} cy={y(metric.nextEstimate)} r="5" /></>}
         </g>;
       })}
     </svg>
+    <div className="graph-inspector inflation-inspector" aria-live="polite"><span>{inspected?.label ?? "EXACT VALUES"}</span><strong>{inspected?.value ?? "Hover, tap, or focus any point"}</strong><small>{inspected?.detail ?? "Solid lines are observed year-over-year rates; dashed segments are Cleveland Fed next-month nowcasts."}</small></div>
     <div className="inflation-legend">{series.map((metric) => <a href={metric.sourceUrl} target="_blank" rel="noreferrer" key={metric.seriesId}><i style={{ background: inflationGraphColors[metric.seriesId] }} /><span>{metric.label}</span><strong>{metric.value.toFixed(1)}%{metric.nextEstimate == null ? "" : ` → ${metric.nextEstimate.toFixed(1)}%`}</strong></a>)}</div>
   </div>;
 }
