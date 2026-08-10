@@ -262,6 +262,51 @@ h1 { margin: 0; max-width: 940px; font-family: var(--font-newsreader), Georgia, 
 .fed-main .release-tape > * { min-height: 64px; padding: 11px 18px; }
 .fed-main + footer { min-height: 58px; }
 
+.fed-story-grid { grid-template-columns: 1fr; }
+.policy-path-panel, .inflation-path-panel { overflow: hidden; }
+.policy-summary { display: grid; grid-template-columns: repeat(3, 1fr); border-bottom: 1px solid var(--line); }
+.policy-summary > div { min-height: 76px; padding: 12px 18px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
+.policy-summary > div:last-child { border-right: 0; }
+.policy-summary span { color: var(--muted); font: 650 7px var(--font-geist-mono); letter-spacing: .1em; }
+.policy-summary strong { margin-top: auto; font: 650 22px/1 var(--font-geist-mono); letter-spacing: -.04em; }
+.policy-summary small { color: var(--muted); font: 500 8px/1.3 var(--font-geist-mono); }
+.policy-graph-wrap { padding: 8px 18px 0; overflow-x: auto; }
+.policy-graph-wrap svg { width: 100%; min-width: 820px; height: 280px; display: block; }
+.policy-y-tick line, .policy-x-tick line { stroke: #e1e5e0; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.policy-x-tick line { stroke: #edf0ec; }.policy-y-tick text, .policy-x-tick text { fill: #858e89; font: 550 8px var(--font-geist-mono); }.policy-y-tick text { text-anchor: end; }.policy-x-tick text { text-anchor: middle; }
+.current-rate-rule { stroke: #a8afaa; stroke-width: 1; stroke-dasharray: 3 4; vector-effect: non-scaling-stroke; }
+.policy-sofr-band { fill: rgba(241,102,69,.14); }
+.policy-sofr-line, .policy-meeting-line { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.policy-meeting-line { stroke: var(--ink); }
+.policy-current-point circle { fill: var(--panel); stroke: var(--ink); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.policy-current-point text { fill: var(--ink); font: 700 8px var(--font-geist-mono); }.policy-current-point text:last-child { fill: var(--muted); font-weight: 550; }
+.policy-meeting-point circle { fill: var(--panel); stroke: var(--ink); stroke-width: 2.5; vector-effect: non-scaling-stroke; }.policy-meeting-point text { fill: var(--ink); text-anchor: middle; font: 700 8px var(--font-geist-mono); }.policy-meeting-point text.date { fill: var(--muted); font-size: 7px; }
+.policy-sofr-point circle { fill: var(--panel); stroke: var(--accent); stroke-width: 2.5; vector-effect: non-scaling-stroke; }.policy-sofr-point text { fill: var(--accent); text-anchor: middle; font: 700 7px var(--font-geist-mono); }
+.policy-legend { min-height: 42px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 18px; color: var(--muted); font: 500 8px var(--font-geist-mono); }
+.policy-legend span { display: inline-flex; align-items: center; gap: 6px; }.policy-legend i { width: 18px; height: 2px; background: var(--ink); }.policy-legend i.sofr { background: var(--accent); }.policy-legend i.band { height: 8px; background: rgba(241,102,69,.14); border: 1px solid rgba(241,102,69,.28); }.policy-legend small { margin-left: auto; color: #8a928e; font: inherit; }
+.meeting-disclosure, .treasury-disclosure { border-top: 1px solid var(--line); }
+.meeting-disclosure > summary, .treasury-disclosure > summary { list-style: none; cursor: pointer; min-height: 54px; padding: 0 18px; display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.meeting-disclosure > summary::-webkit-details-marker, .treasury-disclosure > summary::-webkit-details-marker { display: none; }
+.meeting-disclosure > summary span { font-size: 11px; font-weight: 650; }.meeting-disclosure > summary small { color: var(--muted); font: 500 8px var(--font-geist-mono); }
+.meeting-disclosure > summary::after, .treasury-disclosure > summary::after { content: "+"; color: var(--accent); font: 700 16px var(--font-geist-mono); }.meeting-disclosure[open] > summary::after, .treasury-disclosure[open] > summary::after { content: "−"; }
+.meeting-disclosure > summary small { margin-left: auto; }
+.meeting-disclosure .consensus-graph { border-top: 1px solid var(--line); }
+.meeting-contracts { margin: 0 18px 18px; border: 1px solid var(--line); background: var(--panel); font-family: var(--font-geist-mono); overflow-x: auto; }
+.meeting-contracts table { width: 100%; min-width: 700px; border-collapse: collapse; table-layout: fixed; }.meeting-contracts caption { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }.meeting-contracts th, .meeting-contracts td { height: 38px; padding: 0 12px; border-bottom: 1px solid var(--line); text-align: left; }.meeting-contracts th { height: 28px; color: var(--muted); background: #f0f2ed; font-size: 7px; font-weight: 550; letter-spacing: .08em; }.meeting-contracts th:nth-child(1) { width: 20%; }.meeting-contracts th:nth-child(2) { width: 12%; }.meeting-contracts th:nth-child(3) { width: 11%; }.meeting-contracts th:nth-child(4) { width: 17%; }.meeting-contracts th:nth-child(5) { width: 28%; }.meeting-contracts th:nth-child(6) { width: 12%; }.meeting-contracts tbody tr:last-child td { border-bottom: 0; }.meeting-contracts tbody tr:hover { background: #f1f3ee; }.meeting-contracts strong, .meeting-contracts b { font-size: 9px; }.meeting-contracts b { color: var(--accent); }.meeting-contracts td { color: var(--muted); font-size: 8px; }.meeting-contracts td:first-child { color: var(--ink); }.meeting-contracts .market-link { color: var(--ink); font-weight: 700; }
+.policy-source-line { min-height: 42px; border-top: 1px solid var(--line); padding: 0 18px; display: flex; align-items: center; justify-content: space-between; gap: 20px; color: var(--muted); font: 500 8px var(--font-geist-mono); }.policy-source-line a { text-decoration: underline; text-underline-offset: 3px; }
+.inflation-path-panel .inflation-history { padding: 10px 18px 8px; }
+.inflation-path-panel .inflation-history svg { height: 244px; min-width: 820px; }
+.inflation-path-panel .inflation-history { overflow-x: auto; }
+.inflation-series .inflation-forecast-line { stroke-dasharray: 5 4; stroke-width: 2; }.inflation-series .forecast-point { fill: var(--panel); stroke: currentColor; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.forecast-boundary line { stroke: #9fa7a2; stroke-width: 1; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke; }.forecast-boundary text { fill: var(--muted); font: 700 7px var(--font-geist-mono); letter-spacing: .08em; }
+.inflation-path-panel .inflation-legend { min-width: 820px; padding-top: 5px; }
+.inflation-readout { display: grid; grid-template-columns: repeat(6, 1fr); border-top: 1px solid var(--line); }
+.inflation-readout a { min-height: 72px; padding: 11px 12px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 3px; }.inflation-readout a:last-child { border-right: 0; }.inflation-readout a:hover { background: #f1f3ee; }.inflation-readout span { color: var(--muted); font-size: 8px; }.inflation-readout strong { margin-top: auto; font: 650 18px var(--font-geist-mono); }.inflation-readout small { color: var(--muted); font: 500 7px var(--font-geist-mono); }
+.treasury-disclosure { grid-column: 1 / -1; }
+.treasury-disclosure > summary { min-height: 64px; padding: 0 18px; }
+.treasury-disclosure > summary div { display: flex; flex-direction: column; gap: 5px; }.treasury-disclosure > summary span { color: var(--accent); font: 650 8px var(--font-geist-mono); letter-spacing: .12em; }.treasury-disclosure > summary strong { font-size: 15px; }.treasury-disclosure > summary small { margin-left: auto; color: var(--muted); font: 500 8px var(--font-geist-mono); }
+.treasury-disclosure .rate-graph-block { border-top: 1px solid var(--line); border-right: 0; }
+
 @media (max-width: 1050px) {
   .fed-grid { grid-template-columns: 1fr; }
   .fed-one-screen-grid { grid-template-columns: 1fr; }
@@ -272,6 +317,7 @@ h1 { margin: 0; max-width: 940px; font-family: var(--font-newsreader), Georgia, 
   .release-tape { grid-template-columns: 1fr 1fr; }.release-tape > div { grid-column: 1 / -1; border-bottom: 1px solid var(--line); }
   .summary-copy { grid-template-columns: 1fr 1fr; }.summary-copy p { grid-column: 1 / -1; }
   .model-summary { padding: 24px 0; align-items: end; }
+  .inflation-readout { grid-template-columns: repeat(3, 1fr); }.inflation-readout a:nth-child(3n) { border-right: 0; }.inflation-readout a:nth-child(-n+3) { border-bottom: 1px solid var(--line); }
 }
 
 @media (max-width: 760px) {
@@ -281,6 +327,11 @@ h1 { margin: 0; max-width: 940px; font-family: var(--font-newsreader), Georgia, 
   .inflation-grid { grid-template-columns: repeat(2, 1fr); }.release-tape { grid-template-columns: 1fr; }.release-tape > div { grid-column: auto; }.release-tape > * { border-right: 0; border-bottom: 1px solid var(--line); }
   .inflation-compact-grid { grid-template-columns: repeat(2, 1fr); }.source-ribbon { align-items: flex-start; flex-direction: column; justify-content: center; padding-block: 10px; }
   .rate-graph-block { padding-inline: 10px; overflow-x: auto; }.rate-graph-block svg { min-width: 390px; }.rate-graph-title, .curve-key { min-width: 390px; }
+  .policy-summary { grid-template-columns: 1fr; }.policy-summary > div { min-height: 64px; border-right: 0; border-bottom: 1px solid var(--line); }.policy-summary > div:last-child { border-bottom: 0; }
+  .policy-graph-wrap { padding-inline: 8px; }.policy-legend { min-width: 820px; }.policy-source-line { align-items: flex-start; flex-direction: column; padding-block: 10px; }
+  .meeting-disclosure > summary, .treasury-disclosure > summary { align-items: flex-start; flex-wrap: wrap; padding-block: 12px; }.meeting-disclosure > summary::after, .treasury-disclosure > summary::after { margin-left: auto; }.meeting-disclosure > summary small, .treasury-disclosure > summary small { width: 100%; margin-left: 0; }
+  .meeting-contracts { overflow-x: auto; }
+  .inflation-readout { grid-template-columns: repeat(2, 1fr); }.inflation-readout a:nth-child(3n) { border-right: 1px solid var(--line); }.inflation-readout a:nth-child(2n) { border-right: 0; }.inflation-readout a { border-bottom: 1px solid var(--line); }
   .model-summary { display: block; }.summary-copy { grid-template-columns: 1fr; gap: 10px; }.summary-copy strong { font-size: 28px; }.summary-copy p { grid-column: auto; }.confidence-key { margin-top: 24px; flex-wrap: wrap; }
   .calendar-axis, .calendar-row { grid-template-columns: 140px minmax(0, 1fr) 48px; gap: 12px; }.contract-drawer { padding-left: 152px; }.contract-table-head, .contract-table > a { grid-template-columns: 1fr .7fr .45fr 1fr .55fr; }.contract-table-head > span:nth-child(5), .contract-table > a > span:nth-child(5) { display: none; }.evidence-grid { grid-template-columns: 1fr; }.evidence-grid .market-row { border-right: 0; }
   .app-shell > footer { width: calc(100vw - 28px); flex-direction: column; align-items: start; justify-content: center; }

@@ -35,6 +35,33 @@ export function percentagesToTenths(values: Array<number | null>) {
   return units.map((value) => value / 10);
 }
 
+export function buildExpectedPolicyPath(
+  decisions: Array<{ label: string; meetingDate: string | null; venues: ConsensusVenue[] }>,
+  currentRate: number,
+  labels: string[],
+  moves: Record<string, number>,
+) {
+  let expectedRate = currentRate;
+  const path = [];
+  for (const decision of decisions) {
+    if (!decision.meetingDate) break;
+    const { eligibleVenues, outcomes } = buildConsensus(decision.venues, labels);
+    if (!eligibleVenues.length || outcomes.some((outcome) => outcome.mean == null)) break;
+    const expectedMove = outcomes.reduce((sum, outcome) => sum + (outcome.mean! / 100) * (moves[outcome.label] ?? 0), 0);
+    expectedRate += expectedMove / 100;
+    path.push({
+      label: decision.label,
+      meetingDate: decision.meetingDate,
+      expectedMove,
+      expectedRate,
+      sourceCount: eligibleVenues.length,
+      outcomes,
+      eligibleVenues,
+    });
+  }
+  return path;
+}
+
 export type DatedForecastPoint = { venue: string; probability: number; deadline: string | null };
 
 export function fitDatedForecast(points: DatedForecastPoint[], now = Date.now()) {

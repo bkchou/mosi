@@ -255,19 +255,10 @@ function kalshiQuote(market: JsonRecord): MarketQuote | null {
   };
 }
 
-async function kalshiMarkets(seriesTicker: string, preferEvents = false) {
+async function kalshiMarkets(seriesTicker: string) {
   const query = `series_ticker=${encodeURIComponent(seriesTicker)}&status=open`;
-  const fromEvents = async () => {
-    const payload = record(await fetchJson(`${KALSHI_API}/events?${query}&with_nested_markets=true&limit=200`, 4000));
-    return records(payload.events).flatMap((event) => records(event.markets)).filter((market) => stringValue(market.status) === "active");
-  };
-  if (preferEvents) return fromEvents();
-  try {
-    const payload = record(await fetchJson(`${KALSHI_API}/markets?${query}&limit=1000`, 4000));
-    return records(payload.markets).filter((market) => stringValue(market.status) === "active");
-  } catch {
-    return fromEvents();
-  }
+  const payload = record(await fetchJson(`${KALSHI_API}/markets?${query}&limit=1000`, 4000));
+  return records(payload.markets).filter((market) => stringValue(market.status) === "active");
 }
 
 async function kalshiFedDecisions() {
@@ -773,7 +764,7 @@ export async function getAiSnapshot(force = false): Promise<DataSnapshot<AiData>
   ] as const;
   const kalshiLoads: Array<ProviderLoad<JsonRecord[]>> = [];
   for (const [key, label, series] of kalshiConfigs) {
-    kalshiLoads.push(await loadProvider(`ai-kalshi-${key}`, `Kalshi ${label} contracts`, CACHE_TTL.markets, () => kalshiMarkets(series, true), force));
+    kalshiLoads.push(await loadProvider(`ai-kalshi-${key}`, `Kalshi ${label} contracts`, CACHE_TTL.markets, () => kalshiMarkets(series), force));
   }
   const polymarket = await polymarketPromise;
   const [kalshiGpt, kalshiClaude, kalshiGemini, kalshiGrok] = kalshiLoads;

@@ -23,11 +23,11 @@ test("server-renders the Fed dashboard", async () => {
   assert.match(html, /Monitoring/);
   assert.match(html, /-the-/);
   assert.match(html, /Situation/);
-  assert.match(html, /Consensus probability graph/);
-  assert.match(html, /Venue midpoints normalized to 100%/);
-  assert.match(html, /Inflation history \+ gauges/);
-  assert.match(html, /SOFR path \+ Treasury curve/);
-  assert.match(html, /Official published market data/);
+  assert.match(html, /Market-implied rate paths/);
+  assert.match(html, /Meeting probabilities and contracts/);
+  assert.match(html, /Observed inflation \+ next estimate/);
+  assert.match(html, /Treasury yield curve/);
+  assert.match(html, /History solid · Cleveland Fed nowcast dashed/);
   assert.doesNotMatch(html, /61%|58%|3 of 4 venues|−51 bp/);
   assert.doesNotMatch(html, /codex-preview|Building your site|react-loading-skeleton/);
 });
@@ -37,6 +37,7 @@ test("server-renders the AI Models screen and production metadata", async () => 
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /When the next models land\./);
+  assert.match(html, /EARLIEST PRICED MEDIAN/);
   assert.match(html, /Market-implied model releases/);
   assert.match(html, /exact dates interpolate between quoted contracts/);
   assert.doesNotMatch(html, /What the markets are actually trading/);

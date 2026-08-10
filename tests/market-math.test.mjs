@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildConsensus, fitDatedForecast, percentagesToTenths, timePosition } from "../app/lib/marketMath.ts";
+import { buildConsensus, buildExpectedPolicyPath, fitDatedForecast, percentagesToTenths, timePosition } from "../app/lib/marketMath.ts";
 
 test("normalizes complete independent venues and excludes mirrors or incomplete venues", () => {
   const labels = ["cut", "hold", "hike"];
@@ -51,4 +51,28 @@ test("uses the same proportional position for time axes and graph marks", () => 
   assert.equal(timePosition(bounds.start, bounds), 0);
   assert.equal(timePosition(bounds.end, bounds), 100);
   assert.ok(timePosition(october, bounds) > 49 && timePosition(october, bounds) < 51);
+});
+
+test("turns normalized meeting outcomes into a cumulative expected policy path", () => {
+  const labels = ["Cut 50+ bp", "Cut 25 bp", "No change", "Hike 25 bp", "Hike 50+ bp"];
+  const venue = (values) => ({ venue: "Polymarket", outcomes: labels.map((label, index) => ({ label, probability: values[index] })) });
+  const path = buildExpectedPolicyPath([
+    { label: "September decision", meetingDate: "2026-09-16T18:00:00Z", venues: [venue([0, 20, 60, 20, 0])] },
+    { label: "October decision", meetingDate: "2026-10-28T18:00:00Z", venues: [venue([0, 0, 60, 40, 0])] },
+  ], 3.625, labels, { "Cut 50+ bp": -50, "Cut 25 bp": -25, "No change": 0, "Hike 25 bp": 25, "Hike 50+ bp": 50 });
+  assert.equal(path.length, 2);
+  assert.equal(path[0].expectedMove, 0);
+  assert.equal(path[0].expectedRate, 3.625);
+  assert.equal(path[1].expectedMove, 10);
+  assert.equal(path[1].expectedRate, 3.725);
+});
+
+test("stops the expected policy path at the first incomplete meeting", () => {
+  const labels = ["cut", "hold", "hike"];
+  const complete = { venue: "Polymarket", outcomes: labels.map((label, index) => ({ label, probability: [10, 70, 20][index] })) };
+  const path = buildExpectedPolicyPath([
+    { label: "September", meetingDate: "2026-09-16T18:00:00Z", venues: [{ venue: "Kalshi", outcomes: [{ label: "hold", probability: 80 }] }] },
+    { label: "October", meetingDate: "2026-10-28T18:00:00Z", venues: [complete] },
+  ], 4, labels, { cut: -25, hold: 0, hike: 25 });
+  assert.deepEqual(path, []);
 });

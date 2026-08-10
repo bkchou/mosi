@@ -4,12 +4,14 @@
 
 The first two screens cover:
 
-- **The Fed** — a compact consensus distribution from normalized Polymarket and Kalshi meeting outcomes, official EFFR and inflation observations, the Atlanta Fed's options-implied SOFR path, and the U.S. Treasury yield curve.
+- **The Fed** — one forward graph comparing a target-rate path derived from normalized Polymarket and Kalshi meeting outcomes with the Atlanta Fed's options-implied SOFR path, followed by observed inflation, next estimates, official EFFR, and expandable Treasury context.
 - **AI Models** — exact market-implied median dates and central 50%/80% release intervals fitted from multiple dated contracts on one shared calendar. Venue probabilities are combined before quantiles are calculated, and unsupported tails remain explicitly open-ended.
 
 ## Data sources
 
 MOSI normalizes narrowly matched contracts from the Polymarket Gamma API, Kalshi Trade API, and Pascal Read API in a Cloudflare Pages Function. Pascal identifies its displayed contracts as Polymarket mirrors, so MOSI labels them accordingly instead of treating them as independent consensus.
+
+The forward meeting path converts each normalized decision distribution into its expected basis-point move and accumulates those moves from the current target-range midpoint. The open-ended 50+ bp buckets are conservatively represented at 50 bp; exact outcome probabilities and source contracts remain available in the meeting drawer.
 
 EFFR comes directly from the Federal Reserve Bank of New York. Published inflation observations come from FRED using official BLS, BEA, Cleveland Fed, and Dallas Fed series; available next-period estimates are labeled as Cleveland Fed nowcasts. The forward three-month SOFR path is the Atlanta Fed Market Probability Tracker's daily published output, which is estimated from CME SOFR options. Treasury par yields come from the Treasury's official daily XML feed. MOSI does not scrape or claim direct access to CME FedWatch.
 
