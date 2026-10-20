@@ -148,9 +148,6 @@ i.lab-logo { display: inline-grid; place-items: center; background: var(--model-
 .calendar-inner.open-ended { background: linear-gradient(90deg, var(--model) 55%, transparent); }
 .calendar-outer.open-ended::after, .calendar-inner.open-ended::after { content: ">"; position: absolute; right: 2px; top: 50%; transform: translateY(-52%); color: var(--model); font: 700 9px var(--font-geist-mono); }
 .calendar-unresolved { position: absolute; top: 37px; height: 1px; min-width: 18px; border-top: 1px dashed var(--model); background: linear-gradient(90deg, var(--model-soft), transparent); z-index: 3; }
-.calendar-unresolved::before { content: ""; position: absolute; left: -2px; top: -5px; width: 7px; height: 7px; border: 2px solid var(--model); border-radius: 50%; background: var(--panel); }
-.calendar-unresolved span { position: absolute; left: 7px; white-space: nowrap; font-family: var(--font-geist-mono); }
-.calendar-unresolved span { bottom: 8px; color: var(--model); font-size: 8px; font-weight: 700; }
 .calendar-median { position: absolute; top: 14px; height: 44px; width: 2px; background: var(--model); z-index: 4; }
 .calendar-median span { position: absolute; left: 6px; top: 48px; color: var(--ink); font: 650 8px var(--font-geist-mono); white-space: nowrap; }
 .calendar-toggle { text-align: right; color: var(--model); font: 700 15px var(--font-geist-mono); }

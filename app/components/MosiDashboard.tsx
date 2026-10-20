@@ -476,7 +476,6 @@ function CalendarGuides({ bounds, months, now }: { bounds: { start: number; end:
 
 function ForecastBand({ forecast, bounds, months, now, expanded, onToggle }: { forecast: CalendarForecast; bounds: { start: number; end: number }; months: number[]; now: number; expanded: boolean; onToggle: () => void }) {
   const last = timePosition(forecast.lastDeadline, bounds);
-  const lastLabel = fmtDate(new Date(forecast.lastDeadline).toISOString(), { month: "short", day: "numeric", timeZone: "UTC" }).toUpperCase();
   const band = (className: string, from: number | null, to: number | null) => {
     if (from == null) return null;
     const left = timePosition(from, bounds);
@@ -498,7 +497,7 @@ function ForecastBand({ forecast, bounds, months, now, expanded, onToggle }: { f
         {band("calendar-outer", forecast.q10, forecast.q90)}
         {band("calendar-inner", forecast.q25, forecast.q75)}
         {forecast.median == null
-          ? <div className="calendar-unresolved" style={{ left: `${last}%`, width: `${100 - last}%` }}><span>50% AFTER {lastLabel}</span></div>
+          ? <div className="calendar-unresolved" style={{ left: `${last}%`, width: `${100 - last}%` }} />
           : <div className="calendar-median" style={{ left: `${timePosition(forecast.median, bounds)}%` }}><span>{fmtDate(new Date(forecast.median).toISOString(), { month: "short", day: "numeric", timeZone: "UTC" })}</span></div>}
       </div>
       <div className="calendar-toggle" aria-hidden="true">{expanded ? "−" : "+"}</div>
