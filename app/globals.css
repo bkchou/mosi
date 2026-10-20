@@ -154,7 +154,7 @@ i.lab-logo { display: inline-grid; place-items: center; background: var(--model-
 .calendar-median { position: absolute; top: 14px; height: 44px; width: 2px; background: var(--model); z-index: 4; }
 .calendar-median span { position: absolute; left: 6px; top: 48px; color: var(--ink); font: 650 8px var(--font-geist-mono); white-space: nowrap; }
 .calendar-toggle { text-align: right; color: var(--model); font: 700 15px var(--font-geist-mono); }
-.contract-dot { position: absolute; top: 8px; width: 6px; height: 6px; margin-left: -3px; border-radius: 50%; background: var(--model); box-shadow: 0 0 0 2px var(--panel); z-index: 5; }
+.contract-dot { position: absolute; top: 33px; width: 6px; height: 6px; margin-left: -3px; border-radius: 50%; background: var(--model); box-shadow: 0 0 0 2px var(--panel); z-index: 5; }
 .contract-dot.kalshi { background: var(--panel); box-shadow: inset 0 0 0 1.5px var(--model), 0 0 0 2px var(--panel); }
 .contract-drawer { border-top: 1px solid var(--line); padding: 14px 0 18px 207px; }
 .fit-readout { display: grid; grid-template-columns: repeat(5, minmax(100px, 1fr)); border: 1px solid var(--line); background: var(--panel); }
