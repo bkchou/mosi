@@ -24,7 +24,8 @@ test("server-renders the Fed dashboard", async () => {
   assert.match(html, /Monitoring/);
   assert.match(html, /-the-/);
   assert.match(html, /Situation/);
-  assert.match(html, /FOMC DECISION ODDS/);
+  assert.match(html, /FOMC decision/);
+  assert.doesNotMatch(html, /MONETARY POLICY|class="eyebrow"/);
   assert.match(html, /Expected policy rate/);
   assert.match(html, /Year-over-year inflation/);
   assert.match(html, /Treasury yield curve/);
@@ -54,7 +55,7 @@ test("server-renders the Next Print and Recession screens", async () => {
   assert.match(prints, /Loading release contracts/);
   const recession = await (await render("/recession")).text();
   assert.match(recession, /Is a recession coming\?/);
-  assert.match(recession, /RECESSION ODDS/);
+  assert.match(recession, /Recession odds/);
   for (const html of [prints, recession]) assert.match(html, /href="\/next-print"[^>]*>Next Print/);
 });
 

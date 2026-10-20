@@ -15,8 +15,8 @@ export function fmtPeriod(period: string, cadence: "month" | "quarter" | "day" =
   return fmtDate(date.toISOString(), { month: style, year: "numeric", timeZone: "UTC" });
 }
 
-export function PanelHeading({ kicker, title, aside }: { kicker: string; title: string; aside: string }) {
-  return <div className="panel-heading"><div><span>{kicker}</span><h2>{title}</h2></div><small>{aside}</small></div>;
+export function PanelHeading({ title, aside }: { title: string; aside: string }) {
+  return <div className="panel-heading"><h2>{title}</h2><small>{aside}</small></div>;
 }
 
 export function EmptyState({ title, detail, compact = false }: { title: string; detail?: string; compact?: boolean }) {

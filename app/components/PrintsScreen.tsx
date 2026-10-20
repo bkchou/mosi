@@ -73,7 +73,7 @@ function PrintCard({ print }: { print: Print }) {
   const periodLabel = fmtPeriod(print.period, print.cadence, "long");
   return <article className="panel print-card">
     <header className="print-card-head">
-      <div><span>{periodLabel.toUpperCase()}</span><h2>{print.label}</h2><small>{print.detail}</small></div>
+      <div><h2>{print.label}</h2><small>{periodLabel} · {print.detail}</small></div>
       <div className="print-median"><span>MARKET MEDIAN</span><strong>{medianLabel}</strong></div>
     </header>
     <div className="print-histogram" role="img" aria-label={`${print.label} ${periodLabel}: ${print.buckets.map((bucket) => `${bucketLabel(print, bucket)} ${Math.round(bucket.probability * 100)}%`).join(", ")}`}>

@@ -341,14 +341,8 @@ export function recessionMarketsFromKalshi(markets: JsonRecord[]) {
   });
 }
 
-const RECESSION_DEFINITIONS = {
-  Kalshi: "Two consecutive negative quarters of real GDP in the advance estimates. The 2026 contract counts 2025–26; the 2027 contract counts Q4 2026 through Q4 2027.",
-  Polymarket: "Two consecutive negative quarters of real GDP from Q2 2025 through the deadline, or an NBER recession announcement.",
-};
-
 export type RecessionData = {
   markets: Array<{ year: number; venues: Array<{ venue: MarketQuote["venue"]; quote: MarketQuote }> }>;
-  definitions: typeof RECESSION_DEFINITIONS;
   gdp: { quarters: Observation[]; nowcast: Observation | null; sourceUrl: string; nowcastUrl: string };
   indicators: Array<NonNullable<ReturnType<typeof buildIndicator>>>;
   recessions: Array<{ start: string; end: string }>;
@@ -382,7 +376,6 @@ export async function getRecessionSnapshot(force = false, env: KalshiEnv = {}): 
     sources,
     data: {
       markets: [...byYear.entries()].sort(([a], [b]) => a - b).map(([year, venues]) => ({ year, venues: venues.sort((a, b) => a.venue.localeCompare(b.venue)) })),
-      definitions: RECESSION_DEFINITIONS,
       gdp: {
         quarters,
         nowcast: (series.GDPNOW ?? []).filter((point) => point.period > lastQuarter).at(-1) ?? null,

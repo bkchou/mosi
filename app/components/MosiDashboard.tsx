@@ -10,11 +10,11 @@ import { buildMedianHistory, weeklyMedianMovement, type PriceHistoryPoint } from
 
 export type Screen = "fed" | "prints" | "recession" | "models";
 
-const screens: Record<Screen, { path: string; nav: string; api: string; eyebrow: string; title: string; dek: string }> = {
-  fed: { path: "/", nav: "The Fed", api: "/api/fed", eyebrow: "MONETARY POLICY", title: "Where rates go next.", dek: "FOMC decision odds, the options-implied rate path, and inflation." },
-  prints: { path: "/next-print", nav: "Next Print", api: "/api/prints", eyebrow: "ECONOMIC DATA", title: "What the next print says.", dek: "Kalshi odds for upcoming U.S. data releases." },
-  recession: { path: "/recession", nav: "Recession", api: "/api/recession", eyebrow: "BUSINESS CYCLE", title: "Is a recession coming?", dek: "Recession odds and leading indicators." },
-  models: { path: "/ai-models", nav: "AI Models", api: "/api/ai", eyebrow: "FRONTIER MODEL RELEASES", title: "When the next models land.", dek: "Release dates implied by Polymarket and Kalshi." },
+const screens: Record<Screen, { path: string; nav: string; api: string; title: string; dek: string }> = {
+  fed: { path: "/", nav: "The Fed", api: "/api/fed", title: "Where rates go next.", dek: "FOMC decision odds, the options-implied rate path, and inflation." },
+  prints: { path: "/next-print", nav: "Next Print", api: "/api/prints", title: "What the next print says.", dek: "Kalshi odds for upcoming U.S. data releases." },
+  recession: { path: "/recession", nav: "Recession", api: "/api/recession", title: "Is a recession coming?", dek: "Recession odds and leading indicators." },
+  models: { path: "/ai-models", nav: "AI Models", api: "/api/ai", title: "When the next models land.", dek: "Release dates implied by Polymarket and Kalshi." },
 };
 
 export function screenTitle(screen: Screen) {
@@ -143,7 +143,6 @@ export function MosiDashboard({ screen }: { screen: Screen }) {
       <main className={`${screen}-main`}>
         <section className="hero-row">
           <div>
-            <p className="eyebrow">{screens[screen].eyebrow}</p>
             <h1>{screens[screen].title}</h1>
             <p className="dek">{screens[screen].dek}</p>
           </div>
@@ -195,7 +194,7 @@ function FedScreen({ data, generatedAt, loading }: { data: FedData | null; gener
     <>
       <section className="dashboard-grid fed-story-grid">
         <article className="panel decision-panel" id="fed-decision">
-          <PanelHeading kicker="FOMC DECISION ODDS" title={decision ? `${fmtMeeting(decision.meetingDate, { month: "long", day: "numeric", year: "numeric" })} meeting` : "No active decision markets"} aside={independentVenues.map((venue) => venue.venue).join(" + ")} />
+          <PanelHeading title={decision ? `FOMC decision · ${fmtMeeting(decision.meetingDate, { month: "long", day: "numeric", year: "numeric" })}` : "No active decision markets"} aside={independentVenues.map((venue) => venue.venue).join(" + ")} />
           {data?.decisions.length ? <>
             {data.decisions.length > 1 && <div className="decision-tabs" role="tablist" aria-label="FOMC meeting">
               {data.decisions.map((item, index) => <button key={item.label} type="button" role="tab" aria-selected={index === selectedIndex} className={index === selectedIndex ? "active" : ""} onClick={() => setSelectedIndex(index)}>{fmtMeeting(item.meetingDate)}</button>)}
@@ -210,7 +209,7 @@ function FedScreen({ data, generatedAt, loading }: { data: FedData | null; gener
         </article>
 
         <article className="panel policy-path-panel">
-          <PanelHeading kicker="RATE PATH" title="Expected policy rate" aside="Meetings from prediction markets · 3-month SOFR from options" />
+          <PanelHeading title="Expected policy rate" aside="Meetings from prediction markets · 3-month SOFR from options" />
           <div className="policy-summary" aria-label="Rate path summary">
             <div><span>TARGET RANGE</span><strong>{range ? `${range.low.toFixed(2)}–${range.high.toFixed(2)}%` : "—"}</strong><small>{data?.effectiveRate?.value == null ? "EFFR unavailable" : `EFFR ${data.effectiveRate.value.toFixed(2)}% · ${fmtDate(`${data.effectiveRate.period}T00:00:00Z`, { month: "short", day: "numeric", timeZone: "UTC" })}`}</small></div>
             <div><span>{lastMeeting ? `EXPECTED AFTER ${fmtMeeting(lastMeeting.meetingDate).toUpperCase()}` : "EXPECTED TARGET"}</span><strong>{lastMeeting ? `${lastMeeting.expectedRate.toFixed(2)}%` : "—"}</strong><small>{lastMeeting && currentTargetMidpoint != null ? `${signedBp((lastMeeting.expectedRate - currentTargetMidpoint) * 100)} over ${policyPath.length} meeting${policyPath.length === 1 ? "" : "s"}` : "No complete market"}</small></div>
@@ -221,14 +220,14 @@ function FedScreen({ data, generatedAt, loading }: { data: FedData | null; gener
         </article>
 
         <article className="panel inflation-path-panel">
-          <PanelHeading kicker="INFLATION" title="Year-over-year inflation" aside="Solid observed · dashed Cleveland Fed nowcast" />
+          <PanelHeading title="Year-over-year inflation" aside="Solid observed · dashed Cleveland Fed nowcast" />
           {!!data?.inflation.length && <InflationHistory metrics={data.inflation} />}
           {!!data?.inflation.length && <InflationReadout metrics={data.inflation} />}
           {!data?.inflation.length && <EmptyState title={loading ? "Loading inflation…" : "Inflation observations unavailable"} compact />}
         </article>
 
         <details className="panel treasury-disclosure">
-          <summary><div><span>RATES CONTEXT</span><strong>Treasury yield curve</strong></div><small>{data?.treasury ? `10Y ${data.treasury.curves[0]?.points.find((point) => point.label === "10Y")?.value.toFixed(2) ?? "—"}% · 2s10s ${(data.treasury.spreads.twoTen * 100).toFixed(0)} bp · ${data.treasury.asOf}` : "Unavailable"}</small></summary>
+          <summary><div><strong>Treasury yield curve</strong></div><small>{data?.treasury ? `10Y ${data.treasury.curves[0]?.points.find((point) => point.label === "10Y")?.value.toFixed(2) ?? "—"}% · 2s10s ${(data.treasury.spreads.twoTen * 100).toFixed(0)} bp · ${data.treasury.asOf}` : "Unavailable"}</small></summary>
           {data?.treasury ? <TreasuryCurveGraph data={data.treasury} /> : <EmptyState title={loading ? "Loading Treasury curve…" : "Treasury curve unavailable"} compact />}
         </details>
       </section>
@@ -302,7 +301,7 @@ function TreasuryCurveGraph({ data }: { data: TreasuryCurve }) {
   const ticks = [min, (min + max) / 2, max];
   const curveClass = (label: string) => label === "Latest" ? "curve-0" : label === "1 month ago" ? "curve-1" : "curve-2";
   return <section className="rate-graph-block treasury-block">
-    <div className="rate-graph-title"><div><span>TREASURY PAR YIELD CURVE</span><strong>2s10s {(data.spreads.twoTen * 100).toFixed(0)} bp · 3m10y {(data.spreads.threeMonthTen * 100).toFixed(0)} bp</strong></div><small>{data.curves.map((curve) => `${curve.label} ${fmtDate(`${curve.period}T00:00:00Z`, { month: "short", day: "numeric", timeZone: "UTC" })}`).join(" · ")}</small></div>
+    <div className="rate-graph-title"><div><strong>2s10s {(data.spreads.twoTen * 100).toFixed(0)} bp · 3m10y {(data.spreads.threeMonthTen * 100).toFixed(0)} bp</strong></div><small>{data.curves.map((curve) => `${curve.label} ${fmtDate(`${curve.period}T00:00:00Z`, { month: "short", day: "numeric", timeZone: "UTC" })}`).join(" · ")}</small></div>
     <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`U.S. Treasury yield curves through ${data.asOf}`}>
       {ticks.map((tick) => <g className="rate-grid" key={tick}><line x1={left} x2={right} y1={y(tick)} y2={y(tick)} /><text x={left - 7} y={y(tick) + 3}>{tick.toFixed(2)}%</text></g>)}
       {data.curves.map((curve) => <path className={`treasury-line ${curveClass(curve.label)}`} d={curve.points.map((point, index) => `${index ? "L" : "M"}${x(index)},${y(point.value)}`).join(" ")} key={`${curve.label}-${curve.period}`} />)}
@@ -438,7 +437,7 @@ function ModelsScreen({ data, generatedAt, loading }: { data: AiData | null; gen
 
   return <>
     <article className="panel calendar-panel">
-      <PanelHeading kicker="RELEASE CALENDAR" title="Market-implied release dates" aside={generatedAt ? `Updated ${fmtTime(generatedAt)}` : ""} />
+      <PanelHeading title="Market-implied release dates" aside={generatedAt ? `Updated ${fmtTime(generatedAt)}` : ""} />
       <div className="calendar-wrap">
         {calendarForecasts.length ? <><TimelineAxis bounds={bounds} months={months} now={now} />{calendarForecasts.map((forecast) => {
           const key = `${forecast.company}-${forecast.model}`;

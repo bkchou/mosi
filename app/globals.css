@@ -37,7 +37,6 @@ button { font: inherit; }
 
 main { width: min(1440px, 92vw); margin: 0 auto; padding-bottom: 60px; }
 .hero-row { min-height: 260px; display: flex; align-items: end; justify-content: space-between; gap: 48px; padding: 72px 0 44px; }
-.eyebrow, .label { margin: 0 0 20px; color: var(--accent); font: 650 10px/1.2 var(--font-geist-mono); letter-spacing: .15em; }
 h1 { margin: 0; max-width: 940px; font-family: var(--font-newsreader), Georgia, serif; font-size: clamp(54px, 7vw, 100px); line-height: .88; letter-spacing: -.055em; font-weight: 650; font-variation-settings: "opsz" 72; }
 .dek { max-width: 690px; margin: 24px 0 0; color: var(--muted); font-size: 17px; line-height: 1.55; letter-spacing: -.01em; }
 
@@ -71,8 +70,7 @@ h1 { margin: 0; max-width: 940px; font-family: var(--font-newsreader), Georgia, 
 .curve-key i.year { background: #90978e; }
 .curve-key .rate-source { margin-left: auto; }
 .panel { border: 1px solid var(--line); border-top: 2px solid var(--ink); background: var(--panel); box-shadow: 2px 2px 0 rgba(23,32,29,.08); }
-.panel-heading { min-height: 86px; display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 20px 24px; border-bottom: 1px solid var(--line); }
-.panel-heading > div > span { display: block; color: var(--accent); font: 650 9px/1.1 var(--font-geist-mono); letter-spacing: .14em; margin-bottom: 7px; }
+.panel-heading { min-height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 20px 24px; border-bottom: 1px solid var(--line); }
 .panel-heading h2 { margin: 0; font-size: 19px; line-height: 1.1; letter-spacing: -.025em; font-weight: 620; }
 .panel-heading > small { color: var(--muted); font: 500 9px/1.2 var(--font-geist-mono); text-transform: uppercase; letter-spacing: .08em; text-align: right; }
 
@@ -172,12 +170,12 @@ i.lab-logo { display: inline-grid; place-items: center; background: var(--model-
 
 .app-shell > footer { width: min(1440px, 92vw); margin: 0 auto; min-height: 80px; border-top: 1px solid var(--ink); display: flex; justify-content: space-between; align-items: center; gap: 20px; color: var(--muted); font: 500 9px var(--font-geist-mono); letter-spacing: .05em; }
 
-.fed-main, .prints-main, .recession-main { padding-bottom: 24px; }
-:is(.fed-main, .prints-main, .recession-main) .hero-row { min-height: 132px; padding: 18px 0 16px; align-items: center; }
-:is(.fed-main, .prints-main, .recession-main) .eyebrow { margin-bottom: 10px; }:is(.fed-main, .prints-main, .recession-main) h1 { font-size: clamp(48px, 5vw, 72px); }:is(.fed-main, .prints-main, .recession-main) .dek { margin-top: 13px; max-width: 780px; font-size: 14px; line-height: 1.45; }
+main { padding-bottom: 24px; }
+main .hero-row { min-height: 132px; padding: 18px 0 16px; align-items: center; }
+main h1 { font-size: clamp(48px, 5vw, 72px); }main .dek { margin-top: 13px; max-width: 780px; font-size: 14px; line-height: 1.45; }
 
 .fed-main .release-tape > * { min-height: 64px; padding: 11px 18px; }
-:is(.fed-main, .prints-main, .recession-main) + footer { min-height: 58px; }
+main + footer { min-height: 58px; }
 
 .fed-story-grid { grid-template-columns: 1fr; }
 .policy-path-panel, .inflation-path-panel { overflow: hidden; }
@@ -276,10 +274,6 @@ i.lab-logo { display: inline-grid; place-items: center; background: var(--model-
 .recession-meter { height: 10px; background: #edf0ec; }.recession-meter i { display: block; height: 100%; background: var(--accent); }
 .recession-venue strong { text-align: right; font: 680 18px var(--font-geist-mono); }
 .recession-venue small { grid-column: 2 / -1; color: var(--muted); font: 500 8px var(--font-geist-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.recession-definitions { margin: 0; padding: 12px 20px 16px; border-top: 1px solid var(--line); display: grid; gap: 8px; }
-.recession-definitions div { display: grid; grid-template-columns: 74px 1fr; gap: 10px; }
-.recession-definitions dt { font: 650 8px var(--font-geist-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
-.recession-definitions dd { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
 .gdp-bars { padding: 16px 20px 14px; }
 .gdp-plot { position: relative; height: 170px; display: grid; gap: 6px; }
 .gdp-zero { position: absolute; left: 0; right: 0; border-top: 1px solid var(--ink); z-index: 1; }
@@ -302,12 +296,19 @@ i.lab-logo { display: inline-grid; place-items: center; background: var(--model-
 .indicator-value { display: flex; align-items: baseline; gap: 10px; margin: 12px 0 8px; flex-wrap: wrap; }
 .indicator-value strong { font: 680 26px/1 var(--font-geist-mono); letter-spacing: -.04em; }
 .indicator-value small { color: var(--muted); font: 500 8px var(--font-geist-mono); }
-.indicator-card svg { width: 100%; height: 92px; display: block; overflow: visible; }
+.indicator-plot { position: relative; margin: 18px 0 20px 30px; height: 100px; }
+.indicator-plot svg { width: 100%; height: 100%; display: block; overflow: visible; }
 .indicator-card polyline { fill: none; stroke: var(--ink); stroke-width: 1.5; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 .indicator-card.signal polyline { stroke: var(--accent); }
+.indicator-grid-line { stroke: #e7eae5; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.indicator-year-line { stroke: #eef0ec; stroke-width: 1; vector-effect: non-scaling-stroke; }
 .indicator-threshold { stroke: var(--accent); stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
 .recession-shade { fill: rgba(23,32,29,.08); }
-.indicator-card footer { display: flex; justify-content: space-between; margin-top: 6px; color: var(--muted); font: 500 8px var(--font-geist-mono); }
+.indicator-y, .indicator-unit { position: absolute; right: calc(100% + 6px); transform: translateY(-50%); color: var(--muted); font: 500 7px var(--font-geist-mono); white-space: nowrap; }
+.indicator-unit { top: -16px; transform: none; text-transform: uppercase; letter-spacing: .06em; }
+.indicator-threshold-label { position: absolute; right: 0; transform: translateY(-120%); color: var(--accent); font: 600 7px var(--font-geist-mono); background: var(--panel); padding: 0 2px; }
+.indicator-x { position: absolute; left: 0; right: 0; top: calc(100% + 5px); height: 10px; }
+.indicator-x span { position: absolute; transform: translateX(-50%); color: var(--muted); font: 500 7px var(--font-geist-mono); }
 
 @media (max-width: 1050px) {
   .recession-grid { grid-template-columns: 1fr; }.indicator-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
