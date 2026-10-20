@@ -1,0 +1,78 @@
+{
+  "markets": [
+    {
+      "event_ticker": "KXGPT-ASTRA61",
+      "ticker": "KXGPT-ASTRA61-26SEP25",
+      "status": "active",
+      "title": "Will OpenAI release Astra 6.1 before Sep 25, 2026?",
+      "rules_primary": "If OpenAI releases Astra 6.1 before Sep 25, 2026, then the market resolves to Yes."
+    },
+    {
+      "event_ticker": "KXGPT-ASTRA61",
+      "ticker": "KXGPT-ASTRA61-26OCT30",
+      "status": "active",
+      "title": "Will OpenAI release Astra 6.1 before Oct 30, 2026?",
+      "rules_primary": "If OpenAI releases Astra 6.1 before Oct 30, 2026, then the market resolves to Yes."
+    },
+    {
+      "event_ticker": "KXGPT-ASTRA62",
+      "ticker": "KXGPT-ASTRA62-26OCT30",
+      "status": "active",
+      "title": "Will OpenAI release Astra 6.2 before Oct 30, 2026?"
+    },
+    {
+      "event_ticker": "KXGPT-OPEN",
+      "ticker": "KXGPT-OPEN-26DEC31",
+      "status": "active",
+      "title": "Will OpenAI release GPT-6 before Dec 31, 2026?"
+    },
+    {
+      "event_ticker": "KXGROK-GROK5",
+      "ticker": "KXGROK-GROK5-26DEC31",
+      "status": "active",
+      "title": "Will xAI release Grok 5 before Dec 31, 2026?"
+    },
+    {
+      "event_ticker": "KXGROK-GROK46",
+      "ticker": "KXGROK-GROK46-26DEC31",
+      "status": "active",
+      "title": "Will xAI release Grok 4.6 before Dec 31, 2026?"
+    },
+    {
+      "event_ticker": "KXCLAUDE-CLAUDE6",
+      "ticker": "KXCLAUDE-CLAUDE6-26DEC31",
+      "status": "active",
+      "title": "Will Anthropic release Claude 6+ (any family) before Dec 31, 2026?"
+    },
+    {
+      "event_ticker": "KXCLAUDE-OPUS6",
+      "ticker": "KXCLAUDE-OPUS6-26NOV01",
+      "status": "active",
+      "title": "Will Anthropic release Opus 6 before Nov 1, 2026?"
+    },
+    {
+      "event_ticker": "KXCLAUDE-MYTH",
+      "ticker": "KXCLAUDE-MYTH-26DEC01",
+      "status": "active",
+      "title": "Will Anthropic release Mythos before Dec 1, 2026?"
+    },
+    {
+      "event_ticker": "KXGEMINI-NEXTPRO",
+      "ticker": "KXGEMINI-NEXTPRO-26DEC01",
+      "status": "active",
+      "title": "Will Google release next Gemini Pro model before Dec 1, 2026?"
+    },
+    {
+      "event_ticker": "KXGEMINI-GEM4",
+      "ticker": "KXGEMINI-GEM4-26DEC01",
+      "status": "active",
+      "title": "Will Google release Gemini 4 before Dec 1, 2026?"
+    },
+    {
+      "event_ticker": "KXGROK-GROK47",
+      "ticker": "KXGROK-GROK47-26SEP18",
+      "status": "active",
+      "title": "Will SpaceXAI release Grok 4.7 before Sep 18, 2026?"
+    }
+  ]
+}

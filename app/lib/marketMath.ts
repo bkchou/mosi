@@ -64,7 +64,8 @@ export function buildExpectedPolicyPath(
 
 export type DatedForecastPoint = { venue: string; probability: number; deadline: string | null };
 
-export function fitDatedForecast(points: DatedForecastPoint[], now = Date.now()) {
+/** Fits a pooled deadline curve; quantiles the curve never reaches are null. */
+export function fitDatedQuantiles(points: DatedForecastPoint[], now = Date.now()) {
   const byVenue = new Map<string, DatedForecastPoint[]>();
   for (const point of points) byVenue.set(point.venue, [...(byVenue.get(point.venue) ?? []), point]);
   const venueCurves = [...byVenue.entries()].flatMap(([venue, venuePoints]) => {
@@ -111,20 +112,22 @@ export function fitDatedForecast(points: DatedForecastPoint[], now = Date.now())
     }
     return null;
   };
-  const q10 = quantile(.1);
-  const q25 = quantile(.25);
-  const median = quantile(.5);
-  if (q10 == null || q25 == null || median == null) return null;
   return {
-    q10,
-    q25,
-    median,
+    q10: quantile(.1),
+    q25: quantile(.25),
+    median: quantile(.5),
     q75: quantile(.75),
     q90: quantile(.9),
     venues: venueCurves.map((curve) => curve.venue),
     venueCount: venueCurves.length,
     marketCount: venueCurves.reduce((sum, curve) => sum + curve.samples.length, 0),
   };
+}
+
+export function fitDatedForecast(points: DatedForecastPoint[], now = Date.now()) {
+  const fit = fitDatedQuantiles(points, now);
+  if (fit?.q10 == null || fit.q25 == null || fit.median == null) return null;
+  return { ...fit, q10: fit.q10, q25: fit.q25, median: fit.median };
 }
 
 export function timePosition(timestamp: number, bounds: { start: number; end: number }) {

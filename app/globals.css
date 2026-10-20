@@ -187,10 +187,6 @@ h1 { margin: 0; max-width: 940px; font-family: var(--font-newsreader), Georgia, 
 .summary-copy .label { margin: 0; }
 .summary-copy strong { font-family: var(--font-newsreader), Georgia, serif; font-size: 42px; line-height: .9; letter-spacing: -.045em; font-weight: 650; white-space: nowrap; }
 .summary-copy p { color: var(--muted); margin: 0; max-width: 420px; font-size: 13px; line-height: 1.5; }
-.confidence-key { display: flex; gap: 18px; font-size: 9px; color: var(--muted); font-family: var(--font-geist-mono); white-space: nowrap; }
-.confidence-key span { display: inline-flex; gap: 6px; align-items: center; }
-.confidence-key i { display: inline-block; width: 14px; height: 8px; }
-.confidence-key .point { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }.confidence-key .line { height: 2px; background: var(--accent); }.confidence-key .inner { background: var(--accent); }.confidence-key .outer { background: rgba(241,102,69,.18); }.confidence-key .median { width: 2px; height: 13px; background: var(--ink); }
 .calendar-panel { margin: 16px 0; }
 .calendar-wrap { padding: 0 24px 18px; }
 .calendar-axis, .calendar-row { display: grid; grid-template-columns: 185px minmax(0, 1fr) 58px; gap: 22px; }
@@ -208,7 +204,9 @@ h1 { margin: 0; max-width: 940px; font-family: var(--font-newsreader), Georgia, 
 .calendar-row { min-height: 100px; align-items: center; width: 100%; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
 .calendar-row:hover { background: rgba(23,32,29,.025); }
 .calendar-label { display: flex; flex-direction: column; gap: 3px; border-left: 5px solid var(--model); padding-left: 13px; }
-.calendar-label span { color: var(--model); font: 650 9px var(--font-geist-mono); letter-spacing: .12em; text-transform: uppercase; }
+.calendar-label span { display: inline-flex; align-items: center; gap: 6px; color: var(--model); font: 650 9px var(--font-geist-mono); letter-spacing: .12em; text-transform: uppercase; }
+.lab-logo { flex: none; width: 16px; height: 16px; border-radius: 4px; object-fit: contain; }
+i.lab-logo { display: inline-grid; place-items: center; background: var(--model-soft); color: var(--model); font: 700 9px var(--font-geist-mono); font-style: normal; letter-spacing: 0; }
 .calendar-label strong { font-size: 15px; letter-spacing: -.015em; }
 .calendar-label small { color: var(--muted); font: 500 8px var(--font-geist-mono); }
 .calendar-track { height: 76px; position: relative; border-left: 1px solid #e4e8e3; overflow: visible; }
@@ -227,8 +225,8 @@ h1 { margin: 0; max-width: 940px; font-family: var(--font-newsreader), Georgia, 
 .calendar-outer.open-ended::after, .calendar-inner.open-ended::after { content: ">"; position: absolute; right: 2px; top: 50%; transform: translateY(-52%); color: var(--model); font: 700 9px var(--font-geist-mono); }
 .calendar-unresolved { position: absolute; top: 37px; height: 1px; min-width: 18px; border-top: 1px dashed var(--model); background: linear-gradient(90deg, var(--model-soft), transparent); z-index: 3; }
 .calendar-unresolved::before { content: ""; position: absolute; left: -2px; top: -5px; width: 7px; height: 7px; border: 2px solid var(--model); border-radius: 50%; background: var(--panel); }
-.calendar-unresolved span, .calendar-unresolved small { position: absolute; left: 7px; white-space: nowrap; font-family: var(--font-geist-mono); }
-.calendar-unresolved span { bottom: 8px; color: var(--model); font-size: 8px; font-weight: 700; }.calendar-unresolved small { top: 8px; color: var(--muted); font-size: 7px; }
+.calendar-unresolved span { position: absolute; left: 7px; white-space: nowrap; font-family: var(--font-geist-mono); }
+.calendar-unresolved span { bottom: 8px; color: var(--model); font-size: 8px; font-weight: 700; }
 .calendar-median { position: absolute; top: 14px; height: 44px; width: 2px; background: var(--model); z-index: 4; }
 .calendar-median::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--model); position: absolute; left: -3px; top: 18px; box-shadow: 0 0 0 3px var(--panel); }
 .calendar-median span { position: absolute; left: 6px; top: 48px; color: var(--ink); font: 650 8px var(--font-geist-mono); white-space: nowrap; }
@@ -240,9 +238,6 @@ h1 { margin: 0; max-width: 940px; font-family: var(--font-newsreader), Georgia, 
 .fit-readout { display: grid; grid-template-columns: repeat(5, minmax(100px, 1fr)); border: 1px solid var(--line); background: var(--panel); }
 .fit-readout > span { min-height: 62px; padding: 11px 13px; border-right: 1px solid var(--line); display: flex; flex-direction: column; justify-content: center; gap: 5px; }.fit-readout > span:last-child { border-right: 0; }.fit-readout > span.primary { background: var(--model-soft); }
 .fit-readout small { color: var(--muted); font: 650 7px var(--font-geist-mono); letter-spacing: .08em; }.fit-readout strong { font: 650 10px var(--font-geist-mono); }
-.calendar-insufficient { display: flex; flex-direction: column; justify-content: center; padding-left: 18px; color: var(--muted); }
-.calendar-insufficient strong { position: relative; z-index: 2; font: 700 10px var(--font-geist-mono); letter-spacing: .08em; }
-.calendar-insufficient small { position: relative; z-index: 2; margin-top: 4px; font: 600 8px var(--font-geist-mono); }
 .forecast-history { margin: 12px 0; padding: 13px 15px; border: 1px solid var(--line); display: grid; grid-template-columns: minmax(210px, .7fr) 1fr; gap: 20px; align-items: center; background: color-mix(in srgb, var(--model-soft) 48%, var(--panel)); }
 .forecast-history > div { display: flex; flex-direction: column; gap: 5px; }.forecast-history span, .history-empty strong { color: var(--muted); font: 700 8px var(--font-geist-mono); letter-spacing: .08em; }.forecast-history strong { font: 700 13px var(--font-geist-mono); }.forecast-history small, .history-empty span { color: var(--muted); font: 550 9px/1.45 var(--font-geist-mono); }
 .forecast-history svg { width: 100%; height: 96px; overflow: visible; }.forecast-history polyline { fill: none; stroke: var(--ink); stroke-width: 2; vector-effect: non-scaling-stroke; }.forecast-history circle { fill: var(--highlight); stroke: var(--ink); stroke-width: 1; }.forecast-history text { fill: var(--ink); font: 700 9px var(--font-geist-mono); }
@@ -347,7 +342,7 @@ h1 { margin: 0; max-width: 940px; font-family: var(--font-newsreader), Georgia, 
   .meeting-disclosure > summary, .treasury-disclosure > summary { align-items: flex-start; flex-wrap: wrap; padding-block: 12px; }.meeting-disclosure > summary::after, .treasury-disclosure > summary::after { margin-left: auto; }.meeting-disclosure > summary small, .treasury-disclosure > summary small { width: 100%; margin-left: 0; }
   .meeting-contracts { overflow-x: auto; }
   .inflation-readout { grid-template-columns: repeat(2, 1fr); }.inflation-readout a:nth-child(3n) { border-right: 1px solid var(--line); }.inflation-readout a:nth-child(2n) { border-right: 0; }.inflation-readout a { border-bottom: 1px solid var(--line); }
-  .model-summary { display: block; }.summary-copy { grid-template-columns: 1fr; gap: 10px; }.summary-copy strong { font-size: 28px; }.summary-copy p { grid-column: auto; }.confidence-key { margin-top: 24px; flex-wrap: wrap; }
+  .model-summary { display: block; }.summary-copy { grid-template-columns: 1fr; gap: 10px; }.summary-copy strong { font-size: 28px; }.summary-copy p { grid-column: auto; }
   .calendar-axis, .calendar-row { grid-template-columns: 140px minmax(0, 1fr) 48px; gap: 12px; }.contract-drawer { padding-left: 152px; }.contract-table-head, .contract-table > a { grid-template-columns: 1fr .7fr .45fr 1fr .55fr; }.contract-table-head > span:nth-child(5), .contract-table > a > span:nth-child(5) { display: none; }.evidence-grid { grid-template-columns: 1fr; }.evidence-grid .market-row { border-right: 0; }
   .app-shell > footer { width: calc(100vw - 28px); flex-direction: column; align-items: start; justify-content: center; }
 }

@@ -37,9 +37,9 @@ test("server-renders the AI Models screen and production metadata", async () => 
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /When the next models land\./);
-  assert.match(html, /EARLIEST PRICED MEDIAN/);
-  assert.match(html, /Market-implied model releases/);
-  assert.match(html, /exact dates interpolate between quoted contracts/);
+  assert.match(html, /EARLIEST MEDIAN/);
+  assert.match(html, /Market-implied release dates/);
+  assert.match(html, /Select a row for its contracts/);
   assert.doesNotMatch(html, /What the markets are actually trading/);
   assert.doesNotMatch(html, /Q1 2027|Reference windows|false precision/);
   assert.match(html, /MOSI/);

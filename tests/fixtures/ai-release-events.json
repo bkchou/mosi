@@ -1,0 +1,500 @@
+{
+  "capturedAt": "2026-09-17",
+  "source": "Polymarket Gamma events/keyset, AI tag 439",
+  "events": [
+    {
+      "title": "Gemini 4.0 released by...?",
+      "slug": "gemini-4pt0-released-by-june-30-2026",
+      "markets": [
+        {
+          "question": "Gemini 4.0 released by September 30, 2026?",
+          "slug": "gemini-4pt0-released-by-september-30-2026",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.075\", \"0.925\"]",
+          "endDate": "2026-10-01T03:59:00Z"
+        },
+        {
+          "question": "Gemini 4.0 released by October 31, 2026?",
+          "slug": "gemini-4pt0-released-by-october-31-2026",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.735\", \"0.265\"]",
+          "endDate": "2026-11-01T03:59:00Z"
+        },
+        {
+          "question": "Gemini 4.0 released by November 30, 2026?",
+          "slug": "gemini-4pt0-released-by-november-30-2026",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.905\", \"0.095\"]",
+          "endDate": "2026-12-01T04:59:00Z"
+        }
+      ]
+    },
+    {
+      "title": "Next Google Gemini Pro Model released by...?",
+      "slug": "next-google-gemini-pro-model-released-byptptpt",
+      "markets": [
+        {
+          "question": "Will the next Google Gemini Pro model be released by September 30, 2026?",
+          "slug": "will-the-next-google-gemini-pro-model-be-released-by-september-30-2026",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.115\", \"0.885\"]",
+          "endDate": "2026-10-01T03:59:00Z"
+        },
+        {
+          "question": "Will the next Google Gemini Pro model be released by October 31, 2026?",
+          "slug": "will-the-next-google-gemini-pro-model-be-released-by-october-31-2026",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.835\", \"0.165\"]",
+          "endDate": "2026-11-01T03:59:00Z"
+        },
+        {
+          "question": "Will the next Google Gemini Pro model be released by October 15, 2026?",
+          "slug": "will-the-next-google-gemini-pro-model-be-released-by-october-15-2026",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.4\", \"0.6\"]",
+          "endDate": "2026-10-16T03:59:00Z"
+        }
+      ]
+    },
+    {
+      "title": "Next Claude Sonnet released by...?",
+      "slug": "next-claude-sonnet-released-byptptpt-20260701203831153",
+      "markets": [
+        {
+          "question": "Will the next Claude Sonnet model be released by October 31, 2026?",
+          "slug": "will-the-next-claude-sonnet-model-be-released-by-october-31-2026-20260701203831155",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.875\", \"0.125\"]",
+          "endDate": "2026-11-01T03:59:00Z"
+        },
+        {
+          "question": "Will the next Claude Sonnet model be released by December 31, 2026?",
+          "slug": "will-the-next-claude-sonnet-model-be-released-by-december-31-2026-20260701203831156",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.9245\", \"0.0755\"]",
+          "endDate": "2027-01-01T04:59:00Z"
+        },
+        {
+          "question": "Will the next Claude Sonnet model be released by September 30, 2026?",
+          "slug": "will-the-next-claude-sonnet-model-be-released-by-september-30-2026",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.215\", \"0.785\"]",
+          "endDate": "2026-10-01T03:59:00Z"
+        }
+      ]
+    },
+    {
+      "title": "Grok 5 released by...?",
+      "slug": "grok-5-released-byptptpt-20260710195520919",
+      "markets": [
+        {
+          "question": "Will Grok 5 be released by December 31, 2026?",
+          "slug": "will-grok-5-be-released-by-december-31-2026-20260710195520922-353-996",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.52\", \"0.48\"]",
+          "endDate": "2027-01-01T04:59:00Z"
+        },
+        {
+          "question": "Will Grok 5 be released by October 31, 2026?",
+          "slug": "will-grok-5-be-released-by-october-31-2026",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.135\", \"0.865\"]",
+          "endDate": "2026-11-01T03:59:00Z"
+        },
+        {
+          "question": "Will Grok 5 be released by November 30, 2026?",
+          "slug": "will-grok-5-be-released-by-november-30-2026",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.145\", \"0.855\"]",
+          "endDate": "2026-12-01T04:59:00Z"
+        }
+      ]
+    },
+    {
+      "title": "Next Claude Opus released by...?",
+      "slug": "next-claude-opus-released-byptptpt-20260727142323912",
+      "markets": [
+        {
+          "question": "Will the next Claude Opus model be released by October 31, 2026?",
+          "slug": "will-the-next-claude-opus-model-be-released-by-october-31-2026-20260727142323914",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.984\", \"0.016\"]",
+          "endDate": "2026-11-01T03:59:00Z"
+        },
+        {
+          "question": "Will the next Claude Opus model be released by December 31, 2026?",
+          "slug": "will-the-next-claude-opus-model-be-released-by-december-31-2026-20260727142323915-113",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.974\", \"0.026\"]",
+          "endDate": "2027-01-01T04:59:00Z"
+        },
+        {
+          "question": "Will the next Claude Opus model be released by September 30, 2026?",
+          "slug": "will-the-next-claude-opus-model-be-released-by-september-30-2026",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.815\", \"0.185\"]",
+          "endDate": "2026-10-01T03:59:00Z"
+        },
+        {
+          "question": "Will the next Claude Opus model be released by September 27, 2026?",
+          "slug": "will-the-next-claude-opus-model-be-released-by-september-27-2026",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.665\", \"0.335\"]",
+          "endDate": "2026-09-28T03:59:00Z"
+        },
+        {
+          "question": "Will the next Claude Opus model be released by September 17, 2026?",
+          "slug": "will-the-next-claude-opus-model-be-released-by-september-17-2026",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.004\", \"0.996\"]",
+          "endDate": "2026-09-18T03:59:00Z"
+        },
+        {
+          "question": "Will the next Claude Opus model be released by September 24, 2026?",
+          "slug": "will-the-next-claude-opus-model-be-released-by-september-24-2026",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.55\", \"0.45\"]",
+          "endDate": "2026-09-25T03:59:00Z"
+        },
+        {
+          "question": "Will the next Claude Opus model be released by September 20, 2026?",
+          "slug": "will-the-next-claude-opus-model-be-released-by-september-20-2026",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.036\", \"0.964\"]",
+          "endDate": "2026-09-21T03:59:00Z"
+        }
+      ]
+    },
+    {
+      "title": "SSI public model released by\u2026?",
+      "slug": "ssi-public-model-released-by-20260810094604188",
+      "markets": [
+        {
+          "question": "SSI public model released by September 30, 2026?",
+          "slug": "ssi-public-model-released-by-september-30-2026-20260810094604190",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.095\", \"0.905\"]",
+          "endDate": "2026-10-01T03:59:00Z"
+        },
+        {
+          "question": "SSI public model released by October 31, 2026?",
+          "slug": "ssi-public-model-released-by-october-31-2026-20260810094604191",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.185\", \"0.815\"]",
+          "endDate": "2026-11-01T03:59:00Z"
+        }
+      ]
+    },
+    {
+      "title": "Next OpenAI GPT Terra (5.7+) released by...?",
+      "slug": "next-openai-gpt-terra-5pt7-released-byptptpt",
+      "markets": [
+        {
+          "question": "Next OpenAI GPT Terra (5.7+) released by October 31, 2026?",
+          "slug": "next-openai-gpt-terra-5pt7-released-by-october-31-2026-818",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.43\", \"0.57\"]",
+          "endDate": "2026-11-01T03:59:00Z"
+        },
+        {
+          "question": "Next OpenAI GPT Terra (5.7+) released by September 30, 2026?",
+          "slug": "next-openai-gpt-terra-5pt7-released-by-september-30-2026",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.115\", \"0.885\"]",
+          "endDate": "2026-10-01T03:59:00Z"
+        },
+        {
+          "question": "Next OpenAI GPT Terra (5.7+) released by November 30, 2026?",
+          "slug": "next-openai-gpt-terra-5pt7-released-by-november-30-2026",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.495\", \"0.505\"]",
+          "endDate": "2026-12-01T04:59:00Z"
+        }
+      ]
+    },
+    {
+      "title": "Next OpenAI GPT Luna (5.7+) released by...?",
+      "slug": "next-openai-gpt-luna-5pt7-released-byptptpt",
+      "markets": [
+        {
+          "question": "Next OpenAI GPT Luna (5.7+) released by October 31, 2026?",
+          "slug": "next-openai-gpt-luna-5pt7-released-by-october-31-2026-225",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.9895\", \"0.0105\"]",
+          "endDate": "2026-11-01T03:59:00Z"
+        },
+        {
+          "question": "Next OpenAI GPT Luna (5.7+) released by September 30, 2026?",
+          "slug": "next-openai-gpt-luna-5pt7-released-by-september-30-2026",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.905\", \"0.095\"]",
+          "endDate": "2026-10-01T03:59:00Z"
+        },
+        {
+          "question": "Next OpenAI GPT Luna (5.7+) released by November 30, 2026?",
+          "slug": "next-openai-gpt-luna-5pt7-released-by-november-30-2026",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.989\", \"0.011\"]",
+          "endDate": "2026-12-01T04:59:00Z"
+        }
+      ]
+    },
+    {
+      "title": "Next Z.ai GLM (5.4+) released by...?",
+      "slug": "next-zptai-glm-5pt4-released-byptptpt",
+      "markets": [
+        {
+          "question": "Next Z.ai GLM (5.4+) released by September 30, 2026?",
+          "slug": "next-zptai-glm-5pt4-released-by-september-30-2026-688",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.265\", \"0.735\"]",
+          "endDate": "2026-10-01T03:59:00Z"
+        },
+        {
+          "question": "Next Z.ai GLM (5.4+) released by October 31, 2026?",
+          "slug": "next-zptai-glm-5pt4-released-by-october-31-2026-763",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.855\", \"0.145\"]",
+          "endDate": "2026-11-01T03:59:00Z"
+        }
+      ]
+    },
+    {
+      "title": "Next Fable Model (5.2+) released by...?",
+      "slug": "next-fable-model-5pt2-released-byptptpt",
+      "markets": [
+        {
+          "question": "Next Fable Model (5.2+) released by October 31, 2026?",
+          "slug": "next-fable-model-5pt2-released-by-october-31-2026",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.695\", \"0.305\"]",
+          "endDate": "2026-10-31T23:59:00Z"
+        },
+        {
+          "question": "Next Fable Model (5.2+) released by December 31, 2026?",
+          "slug": "next-fable-model-5pt2-released-by-december-31-2026",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.905\", \"0.095\"]",
+          "endDate": "2026-12-31T23:59:00Z"
+        }
+      ]
+    },
+    {
+      "title": "Next Muse Spark (1.4+) released by...?",
+      "slug": "next-muse-spark-1pt4-released-byptptpt",
+      "markets": [
+        {
+          "question": "Next Muse Spark (1.4+) released by September 30, 2026?",
+          "slug": "next-muse-spark-1pt4-released-by-september-30-2026",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.315\", \"0.685\"]",
+          "endDate": "2026-09-30T23:59:00Z"
+        },
+        {
+          "question": "Next Muse Spark (1.4+) released by October 31, 2026?",
+          "slug": "next-muse-spark-1pt4-released-by-october-31-2026",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.725\", \"0.275\"]",
+          "endDate": "2026-10-31T23:59:00Z"
+        }
+      ]
+    },
+    {
+      "title": "Meta's \"Watermelon\" model released by...?",
+      "slug": "metas-watermelon-model-released-byptptpt",
+      "markets": [
+        {
+          "question": "Meta's Watermelon released by September 30, 2026?",
+          "slug": "metas-watermelon-released-by-september-30-2026",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.1085\", \"0.8915\"]",
+          "endDate": "2026-09-30T23:59:00Z"
+        },
+        {
+          "question": "Meta's Watermelon released by October 31, 2026?",
+          "slug": "metas-watermelon-released-by-october-31-2026",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.675\", \"0.325\"]",
+          "endDate": "2026-10-31T23:59:00Z"
+        },
+        {
+          "question": "Meta's Watermelon released by November 30, 2026?",
+          "slug": "metas-watermelon-released-by-november-30-2026",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.875\", \"0.125\"]",
+          "endDate": "2026-11-30T23:59:00Z"
+        }
+      ]
+    },
+    {
+      "title": "Claude 6 released by...?",
+      "slug": "claude-6-released-byptptpt",
+      "markets": [
+        {
+          "question": "Claude 6 released by March 31, 2027?",
+          "slug": "claude-6-released-by-march-31-2027",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.355\", \"0.645\"]",
+          "endDate": "2027-03-31T23:59:00Z"
+        },
+        {
+          "question": "Claude 6 released by June 30, 2027?",
+          "slug": "claude-6-released-by-june-30-2027",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.675\", \"0.325\"]",
+          "endDate": "2027-06-30T23:59:00Z"
+        },
+        {
+          "question": "Claude 6 released by December 31, 2027?",
+          "slug": "claude-6-released-by-december-31-2027",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.845\", \"0.155\"]",
+          "endDate": "2027-12-31T23:59:00Z"
+        }
+      ]
+    },
+    {
+      "title": "GPT-7 released by...?",
+      "slug": "gpt-7-released-byptptpt",
+      "markets": [
+        {
+          "question": "GPT-7 released by June 30, 2027?",
+          "slug": "gpt-7-released-by-june-30-2027",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.295\", \"0.705\"]",
+          "endDate": "2027-06-30T23:59:00Z"
+        },
+        {
+          "question": "GPT-7 released by December 31, 2027?",
+          "slug": "gpt-7-released-by-december-31-2027",
+          "active": true,
+          "closed": false,
+          "acceptingOrders": true,
+          "outcomes": "[\"Yes\", \"No\"]",
+          "outcomePrices": "[\"0.835\", \"0.165\"]",
+          "endDate": "2027-12-31T23:59:00Z"
+        }
+      ]
+    }
+  ]
+}

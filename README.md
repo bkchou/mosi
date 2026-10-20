@@ -11,6 +11,8 @@ The first two screens cover:
 
 MOSI normalizes narrowly matched contracts from the Polymarket Gamma API, Kalshi Trade API, and Pascal Read API in a Cloudflare Pages Function. Pascal identifies its displayed contracts as Polymarket mirrors, so MOSI labels them accordingly instead of treating them as independent consensus.
 
+Kalshi requests use the server-side `KALSHI_API_KEY_ID` and `KALSHI_PRIVATE_KEY` secrets when configured. Use a read-only key and store its private key as PKCS#8 PEM. These values belong in Cloudflare Pages secrets, never in client code or source control. Without both secrets, public requests remain available, but Kalshi may rate-limit the hosting provider. AI discovery retains the model and version named in each Kalshi contract; contracts with different version thresholds stay separate.
+
 The forward meeting path converts each normalized decision distribution into its expected basis-point move and accumulates those moves from the current target-range midpoint. The open-ended 50+ bp buckets are conservatively represented at 50 bp; exact outcome probabilities and source contracts remain available in the meeting drawer.
 
 EFFR comes directly from the Federal Reserve Bank of New York. Published inflation observations come from FRED using official BLS, BEA, Cleveland Fed, and Dallas Fed series; available next-period estimates are labeled as Cleveland Fed nowcasts. The forward three-month SOFR path is the Atlanta Fed Market Probability Tracker's daily published output, which is estimated from CME SOFR options. Treasury par yields come from the Treasury's official daily XML feed. MOSI does not scrape or claim direct access to CME FedWatch.

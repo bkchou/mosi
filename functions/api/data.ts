@@ -1,3 +1,6 @@
+import { normalizeKalshiAiMarket } from "../../app/lib/kalshiAi.ts";
+import { fetchKalshiJson, type KalshiEnv } from "../lib/kalshi.ts";
+
 type JsonRecord = Record<string, unknown>;
 
 type MarketQuote = {
@@ -82,16 +85,6 @@ const inflationSeries = [
   { label: "Trimmed PCE · YoY", id: "PCETRIM12M159SFRBDAL", kind: "rate", publisher: "Dallas Fed" },
 ] as const;
 
-const trackedAiEvents = [
-  { company: "OpenAI", model: "GPT-6", query: "GPT-6", slug: "gpt-6-released-by", color: "green" },
-  { company: "Anthropic", model: "Next Claude Opus", query: "Claude release", slug: "next-claude-opus-released-byptptpt-20260727142323912", color: "coral" },
-  { company: "Anthropic", model: "Next Claude Sonnet", query: "Claude release", slug: "next-claude-sonnet-released-byptptpt-20260701203831153", color: "coral" },
-  { company: "Anthropic", model: "Next Claude Haiku", query: "Claude release", slug: "next-claude-haiku-released-byptptpt-20260701205353326", color: "coral" },
-  { company: "Google", model: "Gemini 4.0", query: "Gemini release", slug: "gemini-4pt0-released-by-june-30-2026", color: "blue" },
-  { company: "xAI", model: "Grok 5", query: "Grok release", slug: "grok-5-released-byptptpt-20260710195520919", color: "mono" },
-  { company: "xAI", model: "Grok 4.6", query: "Grok release", slug: "grok-4pt6-released-byptptpt-20260804192931960", color: "mono" },
-] as const;
-
 function record(value: unknown): JsonRecord {
   return value && typeof value === "object" ? value as JsonRecord : {};
 }
@@ -170,17 +163,6 @@ async function loadProvider<T>(key: string, source: string, ttl: number, loader:
       value: undefined as T,
       health: { source, status: "unavailable", fetchedAt: null, note },
     };
-  }
-}
-
-async function loadEphemeralProvider<T>(source: string, loader: () => Promise<T>): Promise<ProviderLoad<T>> {
-  try {
-    return { value: await loader(), health: { source, status: "live", fetchedAt: new Date().toISOString() } };
-  } catch (reason) {
-    const message = reason instanceof Error ? reason.message : "";
-    const status = message.match(/:\s(\d{3})$/)?.[1];
-    const note = status ? `Upstream returned HTTP ${status}.` : /timeout|aborted/i.test(message) ? "Upstream request timed out." : "Source is temporarily unavailable.";
-    return { value: undefined as T, health: { source, status: "unavailable", fetchedAt: null, note } };
   }
 }
 
@@ -278,10 +260,23 @@ function kalshiQuote(market: JsonRecord): MarketQuote | null {
   };
 }
 
-async function kalshiMarkets(seriesTicker: string) {
-  const query = `series_ticker=${encodeURIComponent(seriesTicker)}&status=open`;
-  const payload = record(await fetchJson(`${KALSHI_API}/markets?${query}&limit=1000`, 4000));
-  return records(payload.markets).filter((market) => stringValue(market.status) === "active");
+async function loadKalshiSeries(seriesTicker: string, source: string, force = false, env: KalshiEnv = {}): Promise<ProviderLoad<JsonRecord[]>> {
+  return loadProvider(`kalshi-${env.KALSHI_API_KEY_ID ?? "public"}-${seriesTicker}`, source, CACHE_TTL.markets, async () => {
+    const markets: JsonRecord[] = [];
+    let cursor = "";
+    const seen = new Set<string>();
+    do {
+      const query = new URLSearchParams({ series_ticker: seriesTicker, status: "open", limit: "1000" });
+      if (cursor) query.set("cursor", cursor);
+      const payload = record(await fetchKalshiJson(`${KALSHI_API}/markets?${query}`, env));
+      if (!Array.isArray(payload.markets)) throw new Error("Invalid Kalshi markets response");
+      markets.push(...records(payload.markets));
+      cursor = stringValue(payload.cursor);
+      if (cursor && seen.has(cursor)) throw new Error("Repeated Kalshi pagination cursor");
+      seen.add(cursor);
+    } while (cursor);
+    return markets.filter((market) => market.status === "active");
+  }, force);
 }
 
 export function kalshiAiTickersFromRequest(request: Request | undefined) {
@@ -292,18 +287,12 @@ export function kalshiAiTickersFromRequest(request: Request | undefined) {
   return ["KXGPT-", "KXCLAUDE-", "KXGEMINI-", "KXGROK-"].every((prefix) => tickers.some((ticker) => ticker.startsWith(prefix))) ? tickers : [];
 }
 
-async function kalshiMarketsByTicker(tickers: string[]) {
-  const payload = record(await fetchJson(`${KALSHI_API}/markets?tickers=${encodeURIComponent(tickers.join(","))}&limit=1000`, 4000));
-  return records(payload.markets).filter((market) => stringValue(market.status) === "active");
-}
-
 export function groupKalshiAiMarkets(markets: JsonRecord[]) {
   const series = ["KXGPT", "KXCLAUDE", "KXGEMINI", "KXGROK"];
   return series.map((prefix) => markets.filter((market) => stringValue(market.ticker).startsWith(`${prefix}-`)));
 }
 
-async function kalshiFedDecisions() {
-  const markets = await kalshiMarkets("KXFEDDECISION");
+function kalshiFedDecisions(markets: JsonRecord[]) {
   const groups = new Map<string, JsonRecord[]>();
   for (const market of markets) {
     const eventTicker = stringValue(market.event_ticker);
@@ -581,25 +570,51 @@ function applyInflationNowcasts<T extends { label: string; period: string; nextE
   });
 }
 
-type AiForecast = { company: string; model: string; query: string; slug: string; color: string; source: string; sourceUrl: string; points: MarketQuote[]; status: string };
+type AiForecast = { company: string; model: string; slug: string; color: string; source: string; sourceUrl: string; points: MarketQuote[]; status: string };
 
-function normalizeAiRelease(title: string) {
-  const clean = title.replace(/[.…?]+$/g, "").replace(/\s+released\s+(?:by|on).*$/i, "").trim();
-  if (/social network/i.test(title)) return null;
-  if (/GPT-6/i.test(clean)) return { company: "OpenAI", model: "GPT-6", color: "green" };
-  if (/OpenAI.*Astra|Astra/i.test(clean)) return { company: "OpenAI", model: "Astra", color: "green" };
-  if (/Claude Opus/i.test(clean)) return { company: "Anthropic", model: "Next Claude Opus", color: "coral" };
-  if (/Claude Sonnet/i.test(clean)) return { company: "Anthropic", model: "Next Claude Sonnet", color: "coral" };
-  if (/Claude Haiku/i.test(clean)) return { company: "Anthropic", model: "Next Claude Haiku", color: "coral" };
-  if (/Mythos/i.test(clean)) return { company: "Anthropic", model: "Next Mythos-Class", color: "coral" };
-  if (/Gemini 4/i.test(clean)) return { company: "Google", model: "Gemini 4.0", color: "blue" };
-  if (/Gemini Pro/i.test(clean)) return { company: "Google", model: "Next Gemini Pro", color: "blue" };
-  if (/Grok 4\.6/i.test(clean)) return { company: "xAI", model: "Grok 4.6", color: "mono" };
-  if (/Grok 5/i.test(clean)) return { company: "xAI", model: "Grok 5", color: "mono" };
-  if (/MAI/i.test(clean)) return { company: "Microsoft", model: "New MAI Thinking", color: "blue" };
-  if (/Kimi K4/i.test(clean)) return { company: "Moonshot AI", model: "Kimi K4", color: "mono" };
-  if (/Kimi K/i.test(clean)) return { company: "Moonshot AI", model: "Next Kimi K", color: "mono" };
-  return null;
+function normalizeAiRelease(title: string, slug: string, description = "") {
+  if (!isCumulativeAiReleaseEvent(title) || /social network/i.test(title)) return null;
+  // The release tag also covers hardware launches; model contracts describe a model.
+  if (description && !/\bmodel\b/i.test(description)) return null;
+  const name = title.replace(/\s+released\s+by.*$/i, "").trim();
+  if (!name) return null;
+
+  // Keep aliases exact: versions and release thresholds define different events.
+  const aliases: Record<string, string> = {
+    "next google gemini pro model": "Next Gemini Pro",
+    "new mai thinking model": "New MAI Thinking",
+    "next mythos-class": "Next Mythos-Class",
+  };
+  // These event titles omit criteria stated explicitly in their resolution rules.
+  const ruleLabels: Record<string, { title: string; model: string }> = {
+    "claude-6-released-byptptpt": { title: "Claude 6", model: "Claude 6+ (any family)" },
+    "gemini-4pt0-released-by-june-30-2026": { title: "Gemini 4.0", model: "Gemini 4.0 Flash" },
+  };
+  const ruleLabel = ruleLabels[slug];
+  const model = ruleLabel?.title === name ? ruleLabel.model : aliases[name.toLowerCase()] ?? name;
+  const labs = [
+    { pattern: /\b(?:OpenAI|GPT|Astra)\b/i, company: "OpenAI", color: "green" },
+    { pattern: /\b(?:Anthropic|Claude|Mythos|Fable)\b/i, company: "Anthropic", color: "coral" },
+    { pattern: /\b(?:Google|Gemini)\b/i, company: "Google", color: "blue" },
+    { pattern: /\b(?:xAI|Grok)\b/i, company: "xAI", color: "mono" },
+    { pattern: /\b(?:Microsoft|MAI)\b/i, company: "Microsoft", color: "blue" },
+    { pattern: /\b(?:Moonshot|Kimi)\b/i, company: "Moonshot AI", color: "mono" },
+    { pattern: /\b(?:Meta|Muse)\b/i, company: "Meta", color: "blue" },
+    { pattern: /\bMistral\b/i, company: "Mistral", color: "mono" },
+    { pattern: /\b(?:Z\.ai|GLM)\b/i, company: "Z.ai", color: "mono" },
+    { pattern: /\bSSI\b/i, company: "SSI", color: "mono" },
+    { pattern: /\bDeepSeek\b/i, company: "DeepSeek", color: "blue" },
+    { pattern: /\b(?:Alibaba|Qwen)\b/i, company: "Alibaba", color: "mono" },
+  ];
+  const lab = labs.find(({ pattern }) => pattern.test(name));
+  // Discovery is already scoped to AI releases; an unfamiliar lab is not a reason to hide one.
+  return { company: lab?.company ?? "Unknown lab", model: displayModelName(model), color: lab?.color ?? "mono" };
+}
+
+/** Drops lab names and a trailing "Model" that repeat the row's lab label. */
+function displayModelName(model: string) {
+  const short = model.replace(/\b(?:OpenAI|Google|Alibaba|Z\.ai)\s+(?=\S)/g, "").replace(/\s+Model(?=\s*\(|$)/, "").trim();
+  return short || model;
 }
 
 export function isCumulativeAiReleaseEvent(title: string) {
@@ -612,54 +627,54 @@ export function isAffirmativeAiReleaseMarket(question: string) {
 
 async function polymarketAiForecasts(): Promise<AiForecast[]> {
   const payload = record(await fetchJson(POLY_RELEASE_EVENTS));
-  const discovered = records(payload.events).flatMap((event) => {
-    const normalized = normalizeAiRelease(stringValue(event.title));
-    const slug = stringValue(event.slug);
-    if (!normalized || !slug || !isCumulativeAiReleaseEvent(stringValue(event.title))) return [];
-    const points = records(event.markets).filter((market) => market.active === true && market.closed === false && market.acceptingOrders === true && isAffirmativeAiReleaseMarket(stringValue(market.question || market.title))).map((market) => polymarketQuote(market, slug)).filter((quote): quote is MarketQuote => quote != null && quote.deadline != null && new Date(quote.deadline).getTime() >= Date.now() - 86_400_000).sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime());
-    return [{ ...normalized, query: "", slug, source: "Polymarket", sourceUrl: `https://polymarket.com/event/${slug}`, points, status: points.length >= 2 ? "live" : "insufficient_evidence" }];
-  });
-  const bySlug = new Map(discovered.map((forecast) => [forecast.slug, forecast]));
-  for (const tracked of trackedAiEvents) {
-    if (!bySlug.has(tracked.slug)) bySlug.set(tracked.slug, { ...tracked, source: "Polymarket", sourceUrl: `https://polymarket.com/event/${tracked.slug}`, points: [], status: "insufficient_evidence" });
-  }
-  return [...bySlug.values()];
+  return aiForecastsFromEvents(records(payload.events));
 }
 
-function aiForecasts(polymarketForecasts: AiForecast[], kalshiMarketsBySeries: JsonRecord[][], pascalMarkets: JsonRecord[]) {
-  let forecasts = polymarketForecasts;
-  const [kalshiGpt, kalshiClaude, kalshiGemini, kalshiGrok] = kalshiMarketsBySeries;
-  const futureQuotes = (rows: JsonRecord[], tickerPattern: RegExp) => rows.filter((market) => tickerPattern.test(stringValue(market.ticker))).map(kalshiQuote).filter((quote): quote is MarketQuote => quote != null && quote.deadline != null && new Date(quote.deadline).getTime() >= Date.now() - 86400000).sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime());
-  const gptPoints = futureQuotes(kalshiGpt, /^KXGPT-OPEN-/);
-  const astraPoints = futureQuotes(kalshiGpt, /^KXGPT-ASTRA-/);
-  const mythosPoints = futureQuotes(kalshiClaude, /^KXCLAUDE-NXTMYTH-/);
-  const geminiPoints = futureQuotes(kalshiGemini, /^KXGEMINI-GEMI35P-/);
-  const grok46Points = futureQuotes(kalshiGrok, /^KXGROK-GROK46-/);
-  const grok47Points = futureQuotes(kalshiGrok, /^KXGROK-GROK47-/);
-  const grokPoints = futureQuotes(kalshiGrok, /^KXGROK-GROK5-/);
-  forecasts = forecasts.map((forecast) => {
-    if (forecast.company === "OpenAI" && gptPoints.length) return { ...forecast, source: "Polymarket + Kalshi", sourceUrl: "https://polymarket.com/event/gpt-6-released-by", points: [...forecast.points, ...gptPoints].sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime()), status: "live" };
-    if (forecast.company === "xAI" && forecast.model === "Grok 5" && grokPoints.length) return { ...forecast, source: "Polymarket + Kalshi", sourceUrl: "https://kalshi.com/markets/kxgrok", points: [...forecast.points, ...grokPoints].sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime()), status: "live" };
-    if (forecast.company === "xAI" && forecast.model === "Grok 4.6" && grok46Points.length) return { ...forecast, source: "Polymarket + Kalshi", sourceUrl: "https://kalshi.com/markets/kxgrok", points: [...forecast.points, ...grok46Points].sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime()), status: "live" };
-    return forecast;
+export function aiForecastsFromEvents(events: JsonRecord[]): AiForecast[] {
+  return events.flatMap((event) => {
+    const slug = stringValue(event.slug);
+    const normalized = normalizeAiRelease(stringValue(event.title), slug, stringValue(event.description));
+    if (!normalized || !slug || !isCumulativeAiReleaseEvent(stringValue(event.title))) return [];
+    const points = records(event.markets).filter((market) => market.active === true && market.closed === false && market.acceptingOrders === true && isAffirmativeAiReleaseMarket(stringValue(market.question || market.title))).map((market) => polymarketQuote(market, slug)).filter((quote): quote is MarketQuote => quote != null && quote.deadline != null && new Date(quote.deadline).getTime() >= Date.now() - 86_400_000).sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime());
+    return [{ ...normalized, slug, source: "Polymarket", sourceUrl: `https://polymarket.com/event/${slug}`, points, status: points.length >= 2 ? "live" : "insufficient_evidence" }];
   });
-  const kalshiOnly = [
-    { company: "OpenAI", model: "Astra", query: "", slug: "", color: "green", source: "Kalshi", sourceUrl: "https://kalshi.com/markets/kxgpt", points: astraPoints, status: astraPoints.length ? "live" : "no_active_market" },
-    { company: "Anthropic", model: "Next Mythos-Class", query: "", slug: "", color: "coral", source: "Kalshi", sourceUrl: "https://kalshi.com/markets/kxclaude", points: mythosPoints, status: mythosPoints.length ? "live" : "no_active_market" },
-    { company: "Google", model: "Gemini 3.5 Pro", query: "", slug: "", color: "blue", source: "Kalshi", sourceUrl: "https://kalshi.com/markets/kxgemini", points: geminiPoints, status: geminiPoints.length ? "live" : "no_active_market" },
-    { company: "xAI", model: "Grok 4.7", query: "", slug: "", color: "mono", source: "Kalshi", sourceUrl: "https://kalshi.com/markets/kxgrok", points: grok47Points, status: grok47Points.length ? "live" : "no_active_market" },
-  ];
+}
+
+// Kalshi's exact version is a subset of Polymarket's threshold. They differ only if
+// the lab skips that version, so the curves are pooled.
+const KALSHI_MODEL_ALIASES: Record<string, string> = {
+  "OpenAI\u0000Astra 6.1": "GPT Astra 6.1+",
+};
+
+export function aiForecasts(polymarketForecasts: AiForecast[], kalshiMarketsBySeries: JsonRecord[][], pascalMarkets: JsonRecord[]) {
+  const kalshiEvents = new Map<string, AiForecast>();
+  for (const market of kalshiMarketsBySeries.flat()) {
+    if (market.status !== "active") continue;
+    const exact = normalizeKalshiAiMarket(market);
+    const identity = exact && { ...exact, model: KALSHI_MODEL_ALIASES[`${exact.company}\u0000${exact.model}`] ?? exact.model };
+    const quote = kalshiQuote(market);
+    const deadline = quote?.deadline ? Date.parse(quote.deadline) : NaN;
+    if (!identity || !quote || !Number.isFinite(deadline) || deadline <= Date.now()) continue;
+    const eventTicker = stringValue(market.event_ticker);
+    const forecast = kalshiEvents.get(eventTicker) ?? {
+      ...identity, slug: eventTicker, source: "Kalshi",
+      sourceUrl: `https://kalshi.com/markets/${eventTicker.toLowerCase()}`,
+      points: [], status: "insufficient_evidence",
+    };
+    forecast.points.push(quote);
+    kalshiEvents.set(eventTicker, forecast);
+  }
   const merged = new Map<string, AiForecast>();
-  for (const forecast of [...forecasts, ...kalshiOnly]) {
+  for (const forecast of [...polymarketForecasts, ...kalshiEvents.values()]) {
     const key = `${forecast.company}\u0000${forecast.model}`;
     const existing = merged.get(key);
-    if (!existing) merged.set(key, { ...forecast, status: forecast.points.length >= 2 ? "live" : "insufficient_evidence" });
+    if (!existing) merged.set(key, { ...forecast, points: forecast.points.toSorted((a, b) => (a.deadline ?? "").localeCompare(b.deadline ?? "")), status: forecast.points.length >= 2 ? "live" : "insufficient_evidence" });
     else {
       const points = [...existing.points, ...forecast.points].sort((a, b) => (a.deadline ?? "").localeCompare(b.deadline ?? ""));
       merged.set(key, { ...existing, source: [...new Set(points.map((point) => point.venue))].join(" + "), points, status: points.length >= 2 ? "live" : "insufficient_evidence" });
     }
   }
-  forecasts = [...merged.values()].sort((a, b) => a.company.localeCompare(b.company) || a.model.localeCompare(b.model));
+  const forecasts = [...merged.values()].sort((a, b) => a.company.localeCompare(b.company) || a.model.localeCompare(b.model));
   const pascalGpt = pascalMarkets.filter((market) => stringValue(market.symbol).startsWith("GPT6_RELEASED_BY.")).map(pascalQuote).filter((quote): quote is MarketQuote => quote != null && quote.deadline != null && new Date(quote.deadline).getTime() >= Date.now() - 86400000).map((quote) => ({ ...quote, title: `${quote.title} · mirrors Polymarket` })).sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime());
   return { forecasts, evidence: [...forecasts.flatMap((forecast) => forecast.points), ...pascalGpt] };
 }
@@ -872,11 +887,11 @@ type FedData = {
 
 type AiData = ReturnType<typeof aiForecasts>;
 
-export async function getFedSnapshot(force = false): Promise<DataSnapshot<FedData>> {
+export async function getFedSnapshot(force = false, env: KalshiEnv = {}): Promise<DataSnapshot<FedData>> {
   const [pascal, polymarket, kalshi, nowcasts, inflation, rate, sofrPath, treasury, blsSchedule, beaSchedule] = await Promise.all([
     loadProvider("pascal-markets", "Pascal Fed decisions", CACHE_TTL.markets, pascalData, force),
     loadProvider("fed-polymarket", "Polymarket Fed decisions", CACHE_TTL.markets, polymarketFedDecisions, force),
-    loadProvider("fed-kalshi", "Kalshi Fed decisions", CACHE_TTL.markets, kalshiFedDecisions, force),
+    loadKalshiSeries("KXFEDDECISION", "Kalshi Fed decisions", force, env).then((result) => ({ ...result, value: kalshiFedDecisions(result.value ?? []) })),
     loadProvider("fed-nowcasts", "Cleveland Fed inflation nowcast", CACHE_TTL.nowcasts, inflationNowcasts, force),
     loadProvider("fed-inflation", "FRED inflation observations", CACHE_TTL.inflation, () => inflationMetrics(), force),
     loadProvider("fed-effective-rate", "New York Fed effective rate", CACHE_TTL.rates, effectiveRate, force),
@@ -915,24 +930,14 @@ export async function getFedSnapshot(force = false): Promise<DataSnapshot<FedDat
   };
 }
 
-export async function getAiSnapshot(force = false, knownKalshiTickers: string[] = []): Promise<DataSnapshot<AiData>> {
+export async function getAiSnapshot(force = false, env: KalshiEnv = {}): Promise<DataSnapshot<AiData>> {
   const polymarketPromise = loadProvider("ai-polymarket", "Polymarket AI contracts", CACHE_TTL.markets, polymarketAiForecasts, force);
-  const kalshiConfigs = [
-    ["gpt", "GPT", "KXGPT"],
-    ["claude", "Claude", "KXCLAUDE"],
-    ["gemini", "Gemini", "KXGEMINI"],
-    ["grok", "Grok", "KXGROK"],
-  ] as const;
-  let kalshiLoads: Array<ProviderLoad<JsonRecord[]>>;
-  if (knownKalshiTickers.length) {
-    const batch = await loadEphemeralProvider("Kalshi cached contract batch", () => kalshiMarketsByTicker(knownKalshiTickers));
-    kalshiLoads = groupKalshiAiMarkets(batch.value ?? []).map((value, index) => ({ value, health: { ...batch.health, source: `Kalshi ${kalshiConfigs[index][1]} contracts`, note: batch.health.note ? `${batch.health.note} One-request cached-ticker refresh.` : "One-request cached-ticker refresh." } }));
-  } else {
-    kalshiLoads = [];
-    for (const [key, label, series] of kalshiConfigs) {
-      kalshiLoads.push(await loadProvider(`ai-kalshi-${key}`, `Kalshi ${label} contracts`, CACHE_TTL.markets, () => kalshiMarkets(series), force));
-    }
-  }
+  const kalshiLoads = await Promise.all([
+    loadKalshiSeries("KXGPT", "Kalshi GPT contracts", force, env),
+    loadKalshiSeries("KXCLAUDE", "Kalshi Claude contracts", force, env),
+    loadKalshiSeries("KXGEMINI", "Kalshi Gemini contracts", force, env),
+    loadKalshiSeries("KXGROK", "Kalshi Grok contracts", force, env),
+  ]);
   const polymarket = await polymarketPromise;
   const [kalshiGpt, kalshiClaude, kalshiGemini, kalshiGrok] = kalshiLoads;
   const sources = [polymarket.health, kalshiGpt.health, kalshiClaude.health, kalshiGemini.health, kalshiGrok.health];
@@ -948,10 +953,10 @@ export function requestForcesRefresh(request: Request | undefined) {
   return request ? new URL(request.url).searchParams.has("refresh") : false;
 }
 
-export const onRequestGet = async ({ request }: { request: Request }) => {
+export const onRequestGet = async ({ request, env }: { request: Request; env?: KalshiEnv }) => {
   const [fed, ai] = await Promise.all([
-    getFedSnapshot(requestForcesRefresh(request)),
-    getAiSnapshot(requestForcesRefresh(request)),
+    getFedSnapshot(requestForcesRefresh(request), env),
+    getAiSnapshot(requestForcesRefresh(request), env),
   ]);
   return Response.json({
     generatedAt: new Date().toISOString(),
