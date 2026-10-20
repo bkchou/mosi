@@ -37,7 +37,7 @@ test("server-renders the AI Models screen and production metadata", async () => 
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /When the next models land\./);
-  assert.match(html, /EARLIEST MEDIAN/);
+  assert.doesNotMatch(html, /EARLIEST MEDIAN/);
   assert.match(html, /Market-implied release dates/);
   assert.match(html, /Select a row for its contracts/);
   assert.doesNotMatch(html, /What the markets are actually trading/);

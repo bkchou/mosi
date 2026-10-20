@@ -112,11 +112,6 @@ h1 { margin: 0; max-width: 940px; font-family: var(--font-newsreader), Georgia, 
 .release-tape > *:last-child { border-right: 0; }.release-tape a:hover { background: #eef1ec; }
 .release-tape span { color: var(--accent); font: 650 8px var(--font-geist-mono); letter-spacing: .1em; }.release-tape strong { font: 650 12px var(--font-geist-mono); }.release-tape small { color: var(--muted); font: 500 8px var(--font-geist-mono); }
 
-.model-summary { border-top: 1px solid var(--ink); border-bottom: 1px solid var(--ink); min-height: 146px; display: flex; align-items: center; justify-content: space-between; gap: 30px; }
-.summary-copy { display: grid; grid-template-columns: 180px auto 1fr; gap: 28px; align-items: center; }
-.summary-copy .label { margin: 0; }
-.summary-copy strong { font-family: var(--font-newsreader), Georgia, serif; font-size: 42px; line-height: .9; letter-spacing: -.045em; font-weight: 650; white-space: nowrap; }
-.summary-copy p { color: var(--muted); margin: 0; max-width: 420px; font-size: 13px; line-height: 1.5; }
 .calendar-panel { margin: 16px 0; }
 .calendar-wrap { padding: 0 24px 18px; }
 .calendar-axis, .calendar-row { display: grid; grid-template-columns: 185px minmax(0, 1fr) 58px; gap: 22px; }
@@ -159,7 +154,6 @@ i.lab-logo { display: inline-grid; place-items: center; background: var(--model-
 .calendar-median { position: absolute; top: 14px; height: 44px; width: 2px; background: var(--model); z-index: 4; }
 .calendar-median::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--model); position: absolute; left: -3px; top: 18px; box-shadow: 0 0 0 3px var(--panel); }
 .calendar-median span { position: absolute; left: 6px; top: 48px; color: var(--ink); font: 650 8px var(--font-geist-mono); white-space: nowrap; }
-.calendar-tail-label { position: absolute; top: 2px; transform: translateX(-100%); padding-right: 5px; color: var(--model); white-space: nowrap; font: 700 7px/1 var(--font-geist-mono); letter-spacing: .04em; z-index: 4; }
 .calendar-score { display: grid; grid-template-columns: 1fr 14px; text-align: right; align-items: center; }
 .calendar-score strong, .calendar-score span { grid-column: 1; }.calendar-score i { grid-column: 2; grid-row: 1 / span 2; color: var(--model); font: 700 15px var(--font-geist-mono); font-style: normal; }
 .calendar-score strong { font: 650 18px var(--font-geist-mono); }.calendar-score span { color: var(--muted); font: 500 8px var(--font-geist-mono); text-transform: uppercase; }
@@ -248,8 +242,6 @@ i.lab-logo { display: inline-grid; place-items: center; background: var(--model-
   .rate-graph-block:last-child { border-bottom: 0; }
 
   .release-tape { grid-template-columns: 1fr 1fr; }.release-tape > div { grid-column: 1 / -1; border-bottom: 1px solid var(--line); }
-  .summary-copy { grid-template-columns: 1fr 1fr; }.summary-copy p { grid-column: 1 / -1; }
-  .model-summary { padding: 24px 0; align-items: end; }
   .inflation-readout { grid-template-columns: repeat(3, 1fr); }.inflation-readout a:nth-child(3n) { border-right: 0; }.inflation-readout a:nth-child(-n+3) { border-bottom: 1px solid var(--line); }
 }
 
@@ -265,7 +257,6 @@ i.lab-logo { display: inline-grid; place-items: center; background: var(--model-
   .meeting-disclosure > summary, .treasury-disclosure > summary { align-items: flex-start; flex-wrap: wrap; padding-block: 12px; }.meeting-disclosure > summary::after, .treasury-disclosure > summary::after { margin-left: auto; }.treasury-disclosure > summary small { width: 100%; margin-left: 0; }.meeting-disclosure > summary { align-items: center; flex-wrap: nowrap; }.meeting-disclosure > summary::after { margin-left: 0; }
   .meeting-contracts { overflow-x: auto; }
   .inflation-readout { grid-template-columns: repeat(2, 1fr); }.inflation-readout a:nth-child(3n) { border-right: 1px solid var(--line); }.inflation-readout a:nth-child(2n) { border-right: 0; }.inflation-readout a { border-bottom: 1px solid var(--line); }
-  .model-summary { display: block; }.summary-copy { grid-template-columns: 1fr; gap: 10px; }.summary-copy strong { font-size: 28px; }.summary-copy p { grid-column: auto; }
   .calendar-axis, .calendar-row { grid-template-columns: 140px minmax(0, 1fr) 48px; gap: 12px; }.contract-drawer { padding-left: 152px; }.contract-table-head, .contract-table > a { grid-template-columns: 1fr .7fr .45fr 1fr .55fr; }.contract-table-head > span:nth-child(5), .contract-table > a > span:nth-child(5) { display: none; }
   .app-shell > footer { width: calc(100vw - 28px); flex-direction: column; align-items: start; justify-content: center; }
 }
@@ -277,7 +268,7 @@ i.lab-logo { display: inline-grid; place-items: center; background: var(--model-
   .panel-heading { padding: 17px; }.panel-heading > small { display: none; }
   .decision-tabs { overflow-x: auto; }.decision-tabs button { flex: 0 0 auto; }
 
-  .calendar-wrap { padding: 0 12px 12px; }.calendar-axis, .calendar-row { grid-template-columns: 94px minmax(0, 1fr) 38px; gap: 7px; }.calendar-axis { min-height: 40px; }.calendar-axis > div span:nth-child(even) { display: none; }.timeline-axis .today-axis small { display: none; }.calendar-row { min-height: 86px; }.calendar-label { padding-left: 8px; border-left-width: 3px; }.calendar-label strong { font-size: 11px; }.calendar-label small { display: none; }.calendar-score { grid-template-columns: 1fr 9px; }.calendar-score strong { font-size: 12px; }.calendar-score i { font-size: 11px; }.calendar-median span, .calendar-tail-label { display: none; }.contract-drawer { padding: 8px 0 14px; }.fit-readout { grid-template-columns: repeat(3, 1fr); }.fit-readout > span { min-height: 52px; border-bottom: 1px solid var(--line); }.fit-readout > span:nth-child(3) { border-right: 0; }.fit-readout > span:nth-last-child(-n+2) { border-bottom: 0; }.forecast-history { grid-template-columns: 1fr; gap: 8px; }.contract-table-head, .contract-table > a { grid-template-columns: 1.1fr .7fr .45fr .55fr; gap: 6px; padding: 0 7px; }.contract-table-head > span:nth-child(4), .contract-table > a > span:nth-child(4) { display: none; }.calendar-foot { padding: 10px 12px; flex-wrap: wrap; justify-content: start; }.calendar-foot > span:first-child { width: 100%; margin: 0; }
+  .calendar-wrap { padding: 0 12px 12px; }.calendar-axis, .calendar-row { grid-template-columns: 94px minmax(0, 1fr) 38px; gap: 7px; }.calendar-axis { min-height: 40px; }.calendar-axis > div span:nth-child(even) { display: none; }.timeline-axis .today-axis small { display: none; }.calendar-row { min-height: 86px; }.calendar-label { padding-left: 8px; border-left-width: 3px; }.calendar-label strong { font-size: 11px; }.calendar-label small { display: none; }.calendar-score { grid-template-columns: 1fr 9px; }.calendar-score strong { font-size: 12px; }.calendar-score i { font-size: 11px; }.calendar-median span { display: none; }.contract-drawer { padding: 8px 0 14px; }.fit-readout { grid-template-columns: repeat(3, 1fr); }.fit-readout > span { min-height: 52px; border-bottom: 1px solid var(--line); }.fit-readout > span:nth-child(3) { border-right: 0; }.fit-readout > span:nth-last-child(-n+2) { border-bottom: 0; }.forecast-history { grid-template-columns: 1fr; gap: 8px; }.contract-table-head, .contract-table > a { grid-template-columns: 1.1fr .7fr .45fr .55fr; gap: 6px; padding: 0 7px; }.contract-table-head > span:nth-child(4), .contract-table > a > span:nth-child(4) { display: none; }.calendar-foot { padding: 10px 12px; flex-wrap: wrap; justify-content: start; }.calendar-foot > span:first-child { width: 100%; margin: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; animation: none !important; transition: none !important; } }

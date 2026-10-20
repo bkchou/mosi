@@ -407,8 +407,6 @@ function ModelsScreen({ data, generatedAt, loading }: { data: AiData | null; gen
   const now = useMemo(() => generatedAt ? Date.parse(generatedAt) : 0, [generatedAt]);
   const forecasts = useMemo(() => data?.forecasts ?? [], [data?.forecasts]);
   const calendarForecasts = useMemo(() => forecasts.flatMap((forecast) => calendarForecast(forecast, now) ?? []).sort((a, b) => (a.median ?? Infinity) - (b.median ?? Infinity) || a.lastDeadline - b.lastDeadline), [forecasts, now]);
-  const fitted = useMemo(() => calendarForecasts.filter((forecast): forecast is CalendarForecast & { median: number } => forecast.median != null), [calendarForecasts]);
-  const earliest = fitted[0];
   const bounds = useMemo(() => {
     const dates = calendarForecasts.flatMap((forecast) => [forecast.q10, forecast.q90, forecast.median, forecast.lastDeadline, ...forecast.points.map((point) => point.deadline ? new Date(point.deadline).getTime() : NaN)]).filter((value): value is number => value != null && Number.isFinite(value));
     const currentMonth = new Date(now); currentMonth.setUTCDate(1); currentMonth.setUTCHours(0, 0, 0, 0);
@@ -427,10 +425,6 @@ function ModelsScreen({ data, generatedAt, loading }: { data: AiData | null; gen
   }, [bounds]);
 
   return <>
-    <section className="model-summary">
-      <div className="summary-copy"><span className="label">EARLIEST MEDIAN</span><strong>{earliest ? fmtDate(new Date(earliest.median).toISOString(), { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" }) : "Not available"}</strong><p>{earliest ? <><b>{earliest.model}</b> · {earliest.company}{earliest.q25 != null && earliest.q75 != null ? ` · 50% window ${fmtDate(new Date(earliest.q25).toISOString(), { month: "short", day: "numeric", timeZone: "UTC" })} – ${fmtDate(new Date(earliest.q75).toISOString(), { month: "short", day: "numeric", timeZone: "UTC" })}` : ""}</> : "No model reaches 50% by its last contract."}</p></div>
-    </section>
-
     <article className="panel calendar-panel">
       <PanelHeading kicker="RELEASE CALENDAR" title="Market-implied release dates" aside={generatedAt ? `Updated ${fmtTime(generatedAt)}` : ""} />
       <div className="calendar-wrap">
@@ -484,7 +478,6 @@ function ForecastBand({ forecast, bounds, months, now, expanded, onToggle }: { f
         {forecast.median == null
           ? <div className="calendar-unresolved" style={{ left: `${last}%`, width: `${100 - last}%` }}><span>50% AFTER {lastLabel}</span></div>
           : <div className="calendar-median" style={{ left: `${timePosition(forecast.median, bounds)}%` }}><span>{fmtDate(new Date(forecast.median).toISOString(), { month: "short", day: "numeric", timeZone: "UTC" })}</span></div>}
-        {forecast.median != null && (forecast.q75 == null || forecast.q90 == null) && <span className="calendar-tail-label" style={{ left: `${last}%` }}>AFTER {lastLabel}</span>}
       </div>
       <div className="calendar-score"><strong>{forecast.marketCount}</strong><span>CONTRACT{forecast.marketCount === 1 ? "" : "S"}</span><i aria-hidden="true">{expanded ? "−" : "+"}</i></div>
     </button>
