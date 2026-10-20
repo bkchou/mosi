@@ -3,9 +3,27 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { buildConsensus, buildExpectedPolicyPath, fitDatedQuantiles, percentagesToTenths, timePosition } from "../lib/marketMath";
 import { mergeWithLocalCache, storedCache, type CacheEnvelope, type LocalFallback, type StoredFeedCache } from "../lib/localFeedCache";
+import { EmptyState, PanelHeading, fmtDate, fmtTime } from "./ui";
+import { PrintsScreen, type PrintsData } from "./PrintsScreen";
+import { RecessionScreen, type RecessionData } from "./RecessionScreen";
 import { buildMedianHistory, weeklyMedianMovement, type PriceHistoryPoint } from "../lib/forecastHistory";
 
-type Screen = "fed" | "models";
+export type Screen = "fed" | "prints" | "recession" | "models";
+
+const screens: Record<Screen, { path: string; nav: string; api: string; eyebrow: string; title: string; dek: string }> = {
+  fed: { path: "/", nav: "The Fed", api: "/api/fed", eyebrow: "MONETARY POLICY", title: "Where rates go next.", dek: "FOMC decision odds, the options-implied rate path, and inflation." },
+  prints: { path: "/next-print", nav: "Next Print", api: "/api/prints", eyebrow: "ECONOMIC DATA", title: "What the next print says.", dek: "Kalshi odds for upcoming U.S. data releases." },
+  recession: { path: "/recession", nav: "Recession", api: "/api/recession", eyebrow: "BUSINESS CYCLE", title: "Is a recession coming?", dek: "Recession odds and leading indicators." },
+  models: { path: "/ai-models", nav: "AI Models", api: "/api/ai", eyebrow: "FRONTIER MODEL RELEASES", title: "When the next models land.", dek: "Release dates implied by Polymarket and Kalshi." },
+};
+
+export function screenTitle(screen: Screen) {
+  return `${screens[screen].nav} · MOSI`;
+}
+
+export function screenForPath(pathname: string): Screen {
+  return (Object.keys(screens) as Screen[]).find((screen) => screen !== "fed" && pathname.startsWith(screens[screen].path)) ?? "fed";
+}
 type Venue = "Polymarket" | "Kalshi" | "Pascal";
 
 type MarketQuote = {
@@ -40,20 +58,12 @@ type FedData = {
   treasury: TreasuryCurve | null;
 };
 type AiData = { forecasts: Forecast[]; evidence: MarketQuote[] };
+type FeedData = FedData | AiData | PrintsData | RecessionData;
 type FeedStatus = "live" | "partial" | "stale";
 type FeedSource = { source: string; status: "live" | "stale" | "unavailable"; fetchedAt: string | null; note?: string };
 type FeedEnvelope<T> = { generatedAt: string; status: FeedStatus; sources: FeedSource[]; data: T };
 
 const outcomeOrder = ["Cut 50+ bp", "Cut 25 bp", "No change", "Hike 25 bp", "Hike 50+ bp"];
-
-function fmtTime(value: string) {
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(value));
-}
-
-function fmtDate(value: string | null, options?: Intl.DateTimeFormatOptions) {
-  if (!value) return "—";
-  return new Intl.DateTimeFormat("en-US", options ?? { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(new Date(value));
-}
 
 function pct(value: number) {
   return `${value < 1 && value > 0 ? value.toFixed(1) : value.toFixed(0)}%`;
@@ -74,14 +84,14 @@ function cacheAge(value: string) {
 }
 
 export function MosiDashboard({ screen }: { screen: Screen }) {
-  const [feed, setFeed] = useState<FeedEnvelope<FedData | AiData> | null>(null);
+  const [feed, setFeed] = useState<FeedEnvelope<FeedData> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [localFallbacks, setLocalFallbacks] = useState<LocalFallback[]>([]);
 
-  const acceptFeed = useCallback((payload: FeedEnvelope<FedData | AiData>) => {
+  const acceptFeed = useCallback((payload: FeedEnvelope<FeedData>) => {
     const merged = mergeWithLocalCache(screen, payload as unknown as CacheEnvelope, readDeviceCache(screen));
-    setFeed(merged.feed as unknown as FeedEnvelope<FedData | AiData>);
+    setFeed(merged.feed as unknown as FeedEnvelope<FeedData>);
     setLocalFallbacks(merged.fallbacks);
     try { localStorage.setItem(`mosi-feed-v1-${screen}`, JSON.stringify(storedCache(merged.feed, merged.providerFetchedAt))); } catch { /* Live data remains usable when device storage is unavailable. */ }
   }, [screen]);
@@ -90,16 +100,16 @@ export function MosiDashboard({ screen }: { screen: Screen }) {
     setLoading(true);
     setError(null);
     try {
-      const path = screen === "fed" ? "/api/fed" : "/api/ai";
+      const path = screens[screen].api;
       const params = new URLSearchParams();
       if (force) params.set("refresh", String(Date.now()));
       const response = await fetch(`${path}${params.size ? `?${params}` : ""}`, { headers: { accept: "application/json" } });
       if (!response.ok) throw new Error(`Data endpoint returned ${response.status}`);
-      acceptFeed(await response.json() as FeedEnvelope<FedData | AiData>);
+      acceptFeed(await response.json() as FeedEnvelope<FeedData>);
     } catch (reason) {
       const cached = readDeviceCache(screen);
       if (cached && Date.now() - Date.parse(cached.feed.generatedAt) <= 6 * 60 * 60 * 1000) {
-        setFeed({ ...cached.feed, status: "stale", sources: cached.feed.sources.map((source) => ({ ...source, status: "stale", note: "Using this device's last successful snapshot." })) } as unknown as FeedEnvelope<FedData | AiData>);
+        setFeed({ ...cached.feed, status: "stale", sources: cached.feed.sources.map((source) => ({ ...source, status: "stale", note: "Using this device's last successful snapshot." })) } as unknown as FeedEnvelope<FeedData>);
         setLocalFallbacks(Object.entries(cached.providerFetchedAt).filter(([source, fetchedAt]) => source.startsWith("Kalshi") && Date.now() - Date.parse(fetchedAt) <= 6 * 60 * 60 * 1000).map(([source, cachedAt]) => ({ source, cachedAt })));
       }
       setError(reason instanceof Error ? reason.message : "Live data unavailable");
@@ -123,28 +133,30 @@ export function MosiDashboard({ screen }: { screen: Screen }) {
       <header className="topbar">
         <a className="brand" href="/" aria-label="Monitoring the Situation home"><span className="brand-wordmark"><span><b>Mo</b>nitoring</span><small>-the-</small><span><b>Si</b>tuation</span></span></a>
         <nav className="primary-nav" aria-label="Primary navigation">
-          <a className={screen === "fed" ? "active" : ""} href="/">The Fed</a>
-          <a className={screen === "models" ? "active" : ""} href="/ai-models">AI Models</a>
+          {(Object.keys(screens) as Screen[]).map((item) => <a className={screen === item ? "active" : ""} href={screens[item].path} key={item}>{screens[item].nav}</a>)}
         </nav>
         <button className="status-pill" type="button" onClick={() => void loadFeed(true)} title={statusTitle} aria-label={`${visibleStatus} data. Refresh`}>
           <span className={`pulse ${visibleStatus === "syncing" || visibleStatus === "partial" ? "amber" : visibleStatus === "stale" || visibleStatus === "retry" ? "red" : ""}`} />{visibleStatus}
         </button>
       </header>
 
-      <main className={screen === "fed" ? "fed-main" : "models-main"}>
+      <main className={`${screen}-main`}>
         <section className="hero-row">
           <div>
-            <p className="eyebrow">{screen === "fed" ? "MONETARY POLICY" : "FRONTIER MODEL RELEASES"}</p>
-            <h1>{screen === "fed" ? "Where rates go next." : "When the next models land."}</h1>
-            <p className="dek">{screen === "fed" ? "FOMC decision odds from prediction markets, the options-implied rate path, and the inflation data behind both." : "Market-implied release dates from Polymarket and Kalshi contracts."}</p>
+            <p className="eyebrow">{screens[screen].eyebrow}</p>
+            <h1>{screens[screen].title}</h1>
+            <p className="dek">{screens[screen].dek}</p>
           </div>
         </section>
 
         {!!localFallbacks.length && <div className="local-cache-note" role="status"><strong>KALSHI LOCAL SNAPSHOT</strong><span>{cacheAge(localFallbacks.map((item) => item.cachedAt).sort()[0])} · current refresh rate-limited · stored only on this device</span></div>}
 
-        {error && !feed ? <EmptyState title="Live data is unavailable" detail={`${error}. No cached or synthetic values are being shown.`} /> : screen === "fed" ? <FedScreen data={fedData ?? null} generatedAt={feed?.generatedAt ?? null} loading={loading} /> : <ModelsScreen data={aiData ?? null} generatedAt={feed?.generatedAt ?? null} loading={loading} />}
+        {error && !feed ? <EmptyState title="Live data is unavailable" detail={error} /> : screen === "fed" ? <FedScreen data={fedData ?? null} generatedAt={feed?.generatedAt ?? null} loading={loading} />
+          : screen === "prints" ? <PrintsScreen data={feed?.data as PrintsData | undefined ?? null} generatedAt={feed?.generatedAt ?? null} loading={loading} />
+          : screen === "recession" ? <RecessionScreen data={feed?.data as RecessionData | undefined ?? null} generatedAt={feed?.generatedAt ?? null} loading={loading} />
+          : <ModelsScreen data={aiData ?? null} generatedAt={feed?.generatedAt ?? null} loading={loading} />}
       </main>
-      <footer><span>MOSI / bkchou</span><span>Market prices are forecasts, not facts. Sources link to the underlying observation or contract.</span></footer>
+      <footer><span>MOSI / bkchou</span></footer>
     </div>
   );
 }
@@ -194,7 +206,7 @@ function FedScreen({ data, generatedAt, loading }: { data: FedData | null; gener
               <MeetingContracts venues={independentVenues} />
             </details>
           </> : <EmptyState title={loading ? "Loading decision markets…" : "No active Fed decision contracts found"} compact />}
-          <div className="policy-source-line"><span>Polymarket and Kalshi quotes are normalized to 100% and equally weighted. Pascal mirrors Polymarket, so it is not counted.</span></div>
+          <div className="policy-source-line"><span>Polymarket and Kalshi, normalized and equally weighted.</span></div>
         </article>
 
         <article className="panel policy-path-panel">
@@ -205,7 +217,7 @@ function FedScreen({ data, generatedAt, loading }: { data: FedData | null; gener
             <div><span>{finalSofr ? `3M SOFR · ${fmtDate(`${finalSofr.period}T00:00:00Z`, { month: "short", year: "numeric", timeZone: "UTC" }).toUpperCase()}` : "3M SOFR"}</span><strong>{finalSofr ? `${finalSofr.midpoint.toFixed(2)}%` : "—"}</strong><small>{finalSofr ? `${finalSofr.low.toFixed(2)}–${finalSofr.high.toFixed(2)}% middle 50%` : "Atlanta Fed unavailable"}</small></div>
           </div>
           {data?.sofrPath && currentTargetMidpoint != null && generatedAt ? <PolicyPathGraph currentRate={currentTargetMidpoint} effectiveRate={data.effectiveRate?.value ?? null} meetings={policyPath} sofr={data.sofrPath} now={Date.parse(generatedAt)} /> : <EmptyState title={loading ? "Loading the rate path…" : "Rate path unavailable"} compact />}
-          <div className="policy-source-line"><span>Expected move = probability-weighted outcomes; 50+ bp outcomes count as 50 bp.</span>{data?.sofrPath && <a href={data.sofrPath.sourceUrl} target="_blank" rel="noreferrer">Atlanta Fed SOFR model · {data.sofrPath.asOf} ↗</a>}</div>
+          <div className="policy-source-line"><span>50+ bp outcomes count as 50 bp.</span>{data?.sofrPath && <a href={data.sofrPath.sourceUrl} target="_blank" rel="noreferrer">Atlanta Fed SOFR model · {data.sofrPath.asOf} ↗</a>}</div>
         </article>
 
         <article className="panel inflation-path-panel">
@@ -433,7 +445,7 @@ function ModelsScreen({ data, generatedAt, loading }: { data: AiData | null; gen
           return <ForecastBand forecast={forecast} bounds={bounds} months={months} now={now} expanded={expandedForecast === key} onToggle={() => setExpandedForecast((current) => current === key ? null : key)} key={key} />;
         })}</> : <EmptyState title={loading ? "Loading contracts…" : "No model has two or more active dated contracts"} compact />}
       </div>
-      <div className="calendar-foot"><span>Venues are averaged into one curve per model. Select a row for its contracts.</span><span><i className="outer" /> 80%</span><span><i className="inner" /> 50%</span><span><i className="median" /> Median</span></div>
+      <div className="calendar-foot"><span>Select a row for its contracts.</span><span><i className="outer" /> 80%</span><span><i className="inner" /> 50%</span><span><i className="median" /> Median</span><span><i className="contract" /> Polymarket deadline</span><span><i className="contract kalshi" /> Kalshi deadline</span></div>
     </article>
 
   </>;
@@ -449,12 +461,17 @@ function TimelineAxis({ bounds, months, now }: { bounds: { start: number; end: n
     const label = fmtDate(date.toISOString(), { month: "short", timeZone: "UTC" }).toUpperCase();
     const showYear = index === 0 || date.getUTCMonth() === 0;
     return <span className={index === 0 ? "first" : index === months.length - 1 ? "last" : ""} style={{ left: `${position}%` }} key={month}>{label}{showYear ? ` · ${date.getUTCFullYear()}` : ""}</span>;
-  })}<i className="today-axis" style={{ left: `${today}%` }}><b>TODAY</b><small>{fmtDate(new Date(now).toISOString(), { month: "short", day: "numeric" }).toUpperCase()}</small></i></div><span>DETAIL</span></div>;
+  })}<i className="today-axis" style={{ left: `${today}%` }}><b>TODAY</b><small>{fmtDate(new Date(now).toISOString(), { month: "short", day: "numeric" }).toUpperCase()}</small></i></div><span /></div>;
+}
+
+function ruleWeight(month: number) {
+  const index = new Date(month).getUTCMonth();
+  return index === 0 ? "year" : index % 3 === 0 ? "quarter" : "";
 }
 
 function CalendarGuides({ bounds, months, now }: { bounds: { start: number; end: number }; months: number[]; now: number }) {
   const today = timePosition(now, bounds);
-  return <><i className="calendar-elapsed" style={{ width: `${today}%` }} />{months.map((month) => <i className="month-rule" style={{ left: `${timePosition(month, bounds)}%` }} key={month} />)}<i className="today-rule" style={{ left: `${today}%` }} /></>;
+  return <><i className="calendar-elapsed" style={{ width: `${today}%` }} />{months.map((month) => <i className={`month-rule ${ruleWeight(month)}`} style={{ left: `${timePosition(month, bounds)}%` }} key={month} />)}<i className="today-rule" style={{ left: `${today}%` }} /></>;
 }
 
 function ForecastBand({ forecast, bounds, months, now, expanded, onToggle }: { forecast: CalendarForecast; bounds: { start: number; end: number }; months: number[]; now: number; expanded: boolean; onToggle: () => void }) {
@@ -465,6 +482,10 @@ function ForecastBand({ forecast, bounds, months, now, expanded, onToggle }: { f
     const left = timePosition(from, bounds);
     return <div className={`${className} ${to == null ? "open-ended" : ""}`} style={{ left: `${left}%`, width: `${Math.max(0, (to == null ? last : timePosition(to, bounds)) - left)}%` }} />;
   };
+  const contractDots = [...new Map(forecast.points.flatMap((point) => {
+    const timestamp = point.deadline ? Date.parse(point.deadline) : NaN;
+    return Number.isFinite(timestamp) && timestamp > now ? [[`${point.venue}-${timestamp}`, { venue: point.venue, timestamp, probability: point.probability, left: timePosition(timestamp, bounds), label: fmtDate(point.deadline, { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }) }] as const] : [];
+  })).values()];
   const ariaLabel = forecast.median == null
     ? `${forecast.model}: 50 percent not reached by the last contract on ${fmtDate(new Date(forecast.lastDeadline).toISOString())}`
     : `${forecast.model}: market-implied median date ${fmtDate(new Date(forecast.median).toISOString())}`;
@@ -473,13 +494,14 @@ function ForecastBand({ forecast, bounds, months, now, expanded, onToggle }: { f
       <div className="calendar-label"><span><LabLogo company={forecast.company} />{forecast.company}</span><strong>{forecast.model}</strong><small>{forecast.source}</small></div>
       <div className="calendar-track" aria-label={ariaLabel}>
         <CalendarGuides bounds={bounds} months={months} now={now} />
+        {contractDots.map((point) => <i className={`contract-dot ${point.venue.toLowerCase()}`} style={{ left: `${point.left}%` }} title={`${point.venue} · ${point.label} · ${pct(point.probability)}`} key={`${point.venue}-${point.timestamp}`} />)}
         {band("calendar-outer", forecast.q10, forecast.q90)}
         {band("calendar-inner", forecast.q25, forecast.q75)}
         {forecast.median == null
           ? <div className="calendar-unresolved" style={{ left: `${last}%`, width: `${100 - last}%` }}><span>50% AFTER {lastLabel}</span></div>
           : <div className="calendar-median" style={{ left: `${timePosition(forecast.median, bounds)}%` }}><span>{fmtDate(new Date(forecast.median).toISOString(), { month: "short", day: "numeric", timeZone: "UTC" })}</span></div>}
       </div>
-      <div className="calendar-score"><strong>{forecast.marketCount}</strong><span>CONTRACT{forecast.marketCount === 1 ? "" : "S"}</span><i aria-hidden="true">{expanded ? "−" : "+"}</i></div>
+      <div className="calendar-toggle" aria-hidden="true">{expanded ? "−" : "+"}</div>
     </button>
     {expanded && <ForecastDetails forecast={forecast} now={now} />}
   </div>;
@@ -527,12 +549,4 @@ function ForecastHistory({ forecast, now }: { forecast: CalendarForecast; now: n
   const y = (value: number) => 82 - (value - minY) / Math.max(1, maxY - minY) * 64;
   const movementText = movement == null ? "Weekly comparison unavailable" : movement === 0 ? "Median unchanged this week" : `Median moved ${Math.abs(movement)} day${Math.abs(movement) === 1 ? "" : "s"} ${movement < 0 ? "earlier" : "later"} this week`;
   return <div className="forecast-history"><div><span>POLYMARKET FORECAST MOVEMENT</span><strong>{movementText}</strong></div><svg viewBox="0 0 500 96" role="img" aria-label={movementText}><polyline points={history.map((point) => `${x(point.observedAt)},${y(point.median)}`).join(" ")} /><circle cx={x(history.at(-1)!.observedAt)} cy={y(history.at(-1)!.median)} r="4" /><text x="488" y={Math.max(12, y(history.at(-1)!.median) - 7)} textAnchor="end">{fmtDate(new Date(history.at(-1)!.median).toISOString(), { month: "short", day: "numeric", timeZone: "UTC" })}</text></svg></div>;
-}
-
-function PanelHeading({ kicker, title, aside }: { kicker: string; title: string; aside: string }) {
-  return <div className="panel-heading"><div><span>{kicker}</span><h2>{title}</h2></div><small>{aside}</small></div>;
-}
-
-function EmptyState({ title, detail, compact = false }: { title: string; detail?: string; compact?: boolean }) {
-  return <div className={`empty-state ${compact ? "compact" : ""}`}><strong>{title}</strong>{detail && <span>{detail}</span>}</div>;
 }

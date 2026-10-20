@@ -20,6 +20,7 @@ test("server-renders the Fed dashboard", async () => {
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /Where rates go next\./);
+  assert.doesNotMatch(html, /forecasts, not facts/);
   assert.match(html, /Monitoring/);
   assert.match(html, /-the-/);
   assert.match(html, /Situation/);
@@ -40,10 +41,21 @@ test("server-renders the AI Models screen and production metadata", async () => 
   assert.doesNotMatch(html, /EARLIEST MEDIAN/);
   assert.match(html, /Market-implied release dates/);
   assert.match(html, /Select a row for its contracts/);
+  assert.doesNotMatch(html, /CONTRACTS<\/span>/);
   assert.doesNotMatch(html, /What the markets are actually trading/);
   assert.doesNotMatch(html, /Q1 2027|Reference windows|false precision/);
   assert.match(html, /MOSI/);
   assert.match(html, /og\.png/);
+});
+
+test("server-renders the Next Print and Recession screens", async () => {
+  const prints = await (await render("/next-print")).text();
+  assert.match(prints, /What the next print says\./);
+  assert.match(prints, /Loading release contracts/);
+  const recession = await (await render("/recession")).text();
+  assert.match(recession, /Is a recession coming\?/);
+  assert.match(recession, /RECESSION ODDS/);
+  for (const html of [prints, recession]) assert.match(html, /href="\/next-print"[^>]*>Next Print/);
 });
 
 test("removes disposable starter assets", async () => {

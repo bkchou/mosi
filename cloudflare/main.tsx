@@ -1,9 +1,10 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { MosiDashboard } from "../app/components/MosiDashboard";
+import { MosiDashboard, screenForPath, screenTitle } from "../app/components/MosiDashboard";
 import "../app/globals.css";
 
-const screen = window.location.pathname.startsWith("/ai-models") ? "models" : "fed";
+const screen = screenForPath(window.location.pathname);
+document.title = screenTitle(screen);
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

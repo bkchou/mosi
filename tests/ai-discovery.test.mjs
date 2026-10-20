@@ -10,13 +10,13 @@ test("discovers all 14 Release Oracle models from real Polymarket contracts", (t
   t.mock.timers.enable({ apis: ["Date"], now });
   const forecasts = aiForecasts(aiForecastsFromEvents(events), [[], [], [], []], []).forecasts;
   const expected = [
-    ["Anthropic", "Next Claude Opus"], ["OpenAI", "Next GPT Luna (5.7+)"],
-    ["Z.ai", "Next GLM (5.4+)"], ["Anthropic", "Next Claude Sonnet"],
-    ["Meta", "Next Muse Spark (1.4+)"], ["Google", "Next Gemini Pro"],
-    ["Anthropic", "Next Fable (5.2+)"], ["Google", "Gemini 4.0 Flash"],
+    ["Anthropic", "Next Claude Opus"], ["OpenAI", "GPT Luna 5.7+"],
+    ["Z.ai", "GLM 5.4+"], ["Anthropic", "Next Claude Sonnet"],
+    ["Meta", "Muse Spark 1.4+"], ["Google", "Next Gemini Pro"],
+    ["Anthropic", "Fable 5.2+"], ["Google", "Gemini 4.0 Flash"],
     ["Meta", 'Meta\'s "Watermelon" model'], ["xAI", "Grok 5"],
     ["Anthropic", "Claude 6+ (any family)"], ["OpenAI", "GPT-7"],
-    ["OpenAI", "Next GPT Terra (5.7+)"], ["SSI", "SSI public model"],
+    ["OpenAI", "GPT Terra 5.7+"], ["SSI", "SSI public model"],
   ];
   for (const [company, model] of expected) {
     const forecast = forecasts.find((item) => item.company === company && item.model === model);
@@ -30,8 +30,9 @@ test("discovers all 14 Release Oracle models from real Polymarket contracts", (t
 test("keeps unfamiliar models and different version thresholds distinct", () => {
   const names = ["Next Acme Nova (1.0+)", "Next Acme Nova (2.0+)", "Claude Opus 7", "Claude Opus 8", "GPT Astra 6.1+", "GPT Astra 6.2+"];
   const discovered = aiForecastsFromEvents(names.map((name, i) => ({ title: `${name} released by...?`, slug: `new-model-${i}`, markets: [] })));
-  for (const name of names) assert.ok(discovered.some((forecast) => forecast.model === name), name);
-  assert.equal(discovered.find((forecast) => forecast.model === names[0]).company, "Unknown lab");
+  const shown = ["Acme Nova 1.0+", "Acme Nova 2.0+", ...names.slice(2)];
+  for (const name of shown) assert.ok(discovered.some((forecast) => forecast.model === name), name);
+  assert.equal(discovered.find((forecast) => forecast.model === shown[0]).company, "Unknown lab");
 });
 
 test("continues excluding noncumulative events and inactive or negative contracts", (t) => {
@@ -58,7 +59,7 @@ test("merges Kalshi GPT-6 contracts only into GPT-6", (t) => {
   const kalshi = [{ ticker: "KXGPT-OPEN-26DEC31", event_ticker: "KXGPT-OPEN", title: "Will OpenAI release GPT-6 before December 31, 2026?", status: "active", close_time: "2026-12-31T23:59:00Z", last_price_dollars: "0.50" }];
   const result = aiForecasts(poly, [kalshi, [], [], []], []).forecasts;
   assert.equal(result.find((forecast) => forecast.model === "GPT-6").points.filter((point) => point.venue === "Kalshi").length, 1);
-  for (const model of ["Next GPT Luna (5.7+)", "Next GPT Terra (5.7+)", "GPT-7", "Astra"]) {
+  for (const model of ["GPT Luna 5.7+", "GPT Terra 5.7+", "GPT-7", "Astra"]) {
     assert.ok(result.find((forecast) => forecast.model === model).points.every((point) => point.venue !== "Kalshi"), model);
   }
 });

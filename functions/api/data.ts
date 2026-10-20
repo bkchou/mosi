@@ -1,9 +1,9 @@
 import { normalizeKalshiAiMarket } from "../../app/lib/kalshiAi.ts";
 import { fetchKalshiJson, type KalshiEnv } from "../lib/kalshi.ts";
 
-type JsonRecord = Record<string, unknown>;
+export type JsonRecord = Record<string, unknown>;
 
-type MarketQuote = {
+export type MarketQuote = {
   venue: "Polymarket" | "Kalshi" | "Pascal";
   title: string;
   probability: number;
@@ -37,7 +37,7 @@ export type DataSnapshot<T> = {
   data: T;
 };
 
-type ProviderLoad<T> = {
+export type ProviderLoad<T> = {
   value: T;
   health: SourceHealth;
 };
@@ -53,7 +53,7 @@ type ProviderCacheEntry = {
 
 const providerCache = new Map<string, ProviderCacheEntry>();
 
-const CACHE_TTL = {
+export const CACHE_TTL = {
   markets: 60_000,
   rates: 300_000,
   inflation: 21_600_000,
@@ -66,9 +66,9 @@ const POLY_SEARCH = "https://gamma-api.polymarket.com/public-search";
 const POLY_RELEASE_EVENTS = "https://gamma-api.polymarket.com/events/keyset?tag_id=439&title_search=release&closed=false&limit=100";
 const KALSHI_API = "https://external-api.kalshi.com/trade-api/v2";
 const PASCAL_MARKETS = "https://data.pascal.trade/api/v1/markets";
-const FRED_CSV = "https://fred.stlouisfed.org/graph/fredgraph.csv";
+export const FRED_CSV = "https://fred.stlouisfed.org/graph/fredgraph.csv";
 const EFFR_API = "https://markets.newyorkfed.org/api/rates/unsecured/effr/last/1.json";
-const CLEVELAND_NOWCAST = "https://www.clevelandfed.org/-/media/files/webcharts/inflationnowcasting/nowcast_year.json";
+export const CLEVELAND_NOWCAST = "https://www.clevelandfed.org/-/media/files/webcharts/inflationnowcasting/nowcast_year.json";
 const ATLANTA_MPT = "https://www.atlantafed.org/cenfis/market-probability-tracker?item=D52F87BB-8391-466C-BC80-C44F5A8CD63D";
 const TREASURY_YIELD_CURVE = "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?type=daily_treasury_yield_curve";
 const BLS_CPI_SCHEDULE = "https://www.bls.gov/schedule/news_release/cpi.htm";
@@ -84,19 +84,19 @@ const inflationSeries = [
   { label: "Trimmed PCE · YoY", id: "PCETRIM12M159SFRBDAL", kind: "rate", publisher: "Dallas Fed" },
 ] as const;
 
-function record(value: unknown): JsonRecord {
+export function record(value: unknown): JsonRecord {
   return value && typeof value === "object" ? value as JsonRecord : {};
 }
 
-function records(value: unknown): JsonRecord[] {
+export function records(value: unknown): JsonRecord[] {
   return Array.isArray(value) ? value.map(record) : [];
 }
 
-function stringValue(value: unknown) {
+export function stringValue(value: unknown) {
   return typeof value === "string" ? value : "";
 }
 
-function finiteNumber(value: unknown): number | null {
+export function finiteNumber(value: unknown): number | null {
   if (value == null || value === "") return null;
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : null;
@@ -107,7 +107,7 @@ function arrayValue(value: unknown): unknown[] {
   try { return JSON.parse(stringValue(value)) as unknown[]; } catch { return []; }
 }
 
-async function loadProvider<T>(key: string, source: string, ttl: number, loader: () => Promise<T>, force = false): Promise<ProviderLoad<T>> {
+export async function loadProvider<T>(key: string, source: string, ttl: number, loader: () => Promise<T>, force = false): Promise<ProviderLoad<T>> {
   const now = Date.now();
   if (!providerCache.has(key) && providerCache.size >= 64) providerCache.delete(providerCache.keys().next().value!);
   const entry = providerCache.get(key) ?? {};
@@ -239,7 +239,7 @@ function kalshiProbability(market: JsonRecord) {
   return null;
 }
 
-function kalshiQuote(market: JsonRecord): MarketQuote | null {
+export function kalshiQuote(market: JsonRecord): MarketQuote | null {
   const quote = kalshiProbability(market);
   const title = stringValue(market.title);
   const ticker = stringValue(market.ticker);
@@ -259,7 +259,7 @@ function kalshiQuote(market: JsonRecord): MarketQuote | null {
   };
 }
 
-async function loadKalshiSeries(seriesTicker: string, source: string, force = false, env: KalshiEnv = {}): Promise<ProviderLoad<JsonRecord[]>> {
+export async function loadKalshiSeries(seriesTicker: string, source: string, force = false, env: KalshiEnv = {}): Promise<ProviderLoad<JsonRecord[]>> {
   return loadProvider(`kalshi-${env.KALSHI_API_KEY_ID ?? "public"}-${seriesTicker}`, source, CACHE_TTL.markets, async () => {
     const markets: JsonRecord[] = [];
     let cursor = "";
@@ -337,7 +337,7 @@ function deadlineFromQuestion(question: string): string | null {
   return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null;
 }
 
-async function fetchJson(url: string, timeoutMs = 10000) {
+export async function fetchJson(url: string, timeoutMs = 10000) {
   const response = await fetch(url, {
     headers: { accept: "application/json", "user-agent": "MOSI/1.0 (+https://mosi.bkchou.com)" },
     signal: AbortSignal.timeout(timeoutMs),
@@ -346,7 +346,7 @@ async function fetchJson(url: string, timeoutMs = 10000) {
   return response.json() as Promise<unknown>;
 }
 
-async function fetchText(url: string, accept: string, timeoutMs = 10000) {
+export async function fetchText(url: string, accept: string, timeoutMs = 10000) {
   const response = await fetch(url, {
     headers: { accept, "user-agent": "MOSI/1.0 (+https://mosi.bkchou.com)" },
     signal: AbortSignal.timeout(timeoutMs),
@@ -355,12 +355,12 @@ async function fetchText(url: string, accept: string, timeoutMs = 10000) {
   return response.text();
 }
 
-async function searchPolymarket(query: string) {
+export async function searchPolymarket(query: string) {
   const url = `${POLY_SEARCH}?q=${encodeURIComponent(query)}&limit_per_type=25&events_status=active`;
   return record(await fetchJson(url));
 }
 
-function polymarketQuote(market: JsonRecord, eventSlug: string): MarketQuote | null {
+export function polymarketQuote(market: JsonRecord, eventSlug: string): MarketQuote | null {
   const probability = probabilityFromOutcomePrices(market.outcomePrices, market.outcomes);
   const title = stringValue(market.question || market.title);
   if (probability == null || !title) return null;
@@ -610,9 +610,10 @@ function normalizeAiRelease(title: string, slug: string, description = "") {
   return { company: lab?.company ?? "Unknown lab", model: displayModelName(model), color: lab?.color ?? "mono" };
 }
 
-/** Drops lab names and a trailing "Model" that repeat the row's lab label. */
+/** Drops lab names, a trailing "Model", and a "Next" that a "+" version threshold already says. */
 function displayModelName(model: string) {
-  const short = model.replace(/\b(?:OpenAI|Google|Alibaba|Z\.ai)\s+(?=\S)/g, "").replace(/\s+Model(?=\s*\(|$)/, "").trim();
+  const short = model.replace(/\b(?:OpenAI|Google|Alibaba|Z\.ai)\s+(?=\S)/g, "").replace(/\s+Model(?=\s*\(|$)/, "").trim()
+    .replace(/^Next\s+(.+?)\s*\((\d[\d.]*\+)\)$/, "$1 $2");
   return short || model;
 }
 

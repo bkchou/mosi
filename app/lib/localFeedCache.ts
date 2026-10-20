@@ -36,7 +36,7 @@ function kalshiCompany(source: string) {
   return null;
 }
 
-export function mergeWithLocalCache(screen: "fed" | "models", current: CacheEnvelope, stored: StoredFeedCache | null, now = Date.now()) {
+export function mergeWithLocalCache(screen: string, current: CacheEnvelope, stored: StoredFeedCache | null, now = Date.now()) {
   const providerFetchedAt = { ...(stored?.providerFetchedAt ?? {}) };
   for (const source of current.sources) {
     if (source.status === "live" && !source.note?.includes("One-request cached-ticker refresh.")) providerFetchedAt[source.source] = source.fetchedAt ?? current.generatedAt;
