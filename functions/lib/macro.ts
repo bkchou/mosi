@@ -1,6 +1,6 @@
 import type { KalshiEnv } from "./kalshi.ts";
 import {
-  CACHE_TTL, CLEVELAND_NOWCAST, FRED_CSV, fetchJson, fetchText, finiteNumber, kalshiQuote, loadKalshiSeries, loadProvider,
+  CACHE_TTL, CLEVELAND_NOWCAST, FRED_CSV, fetchJson, fetchText, finiteNumber, getFedSnapshot, kalshiQuote, loadKalshiSeries, loadProvider,
   overallStatus, polymarketQuote, record, records, searchPolymarket, stringValue,
   type DataSnapshot, type JsonRecord, type MarketQuote,
 } from "../api/data.ts";
@@ -250,6 +250,13 @@ export async function getPrintsSnapshot(force = false, env: KalshiEnv = {}): Pro
     : kalshi.find((load) => load.health.status !== "live")!.health;
   const sources = [{ ...kalshiHealth, source: "Kalshi economic contracts" }, fred.health, clevelandMonth.health, clevelandYear.health];
   return { generatedAt: new Date().toISOString(), status: overallStatus(sources), sources, data: { prints } };
+}
+
+/** The Fed page carries the next data prints alongside the rate markets they move. */
+export async function getFedPageSnapshot(force = false, env: KalshiEnv = {}) {
+  const [fed, prints] = await Promise.all([getFedSnapshot(force, env), getPrintsSnapshot(force, env)]);
+  const status = fed.status === "live" && prints.status === "live" ? "live" : fed.status === "stale" && prints.status === "stale" ? "stale" : "partial";
+  return { ...fed, status, sources: [...fed.sources, ...prints.sources], data: { ...fed.data, prints: prints.data.prints } } satisfies DataSnapshot<unknown>;
 }
 
 // ---------------------------------------------------------------------------

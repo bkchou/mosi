@@ -43,16 +43,17 @@ function startOfEasternDay(timestamp: number) {
   return Date.UTC(part("year"), part("month") - 1, part("day"));
 }
 
-export function PrintsScreen({ data, generatedAt, loading }: { data: PrintsData | null; generatedAt: string | null; loading: boolean }) {
+export function NextPrints({ prints, generatedAt, loading }: { prints: Print[]; generatedAt: string | null; loading: boolean }) {
   const now = generatedAt ? Date.parse(generatedAt) : 0;
   const days = useMemo(() => {
     const groups = new Map<string, Print[]>();
-    for (const print of data?.prints ?? []) groups.set(print.releaseAt ?? "", [...(groups.get(print.releaseAt ?? "") ?? []), print]);
+    for (const print of prints) groups.set(print.releaseAt ?? "", [...(groups.get(print.releaseAt ?? "") ?? []), print]);
     return [...groups.entries()];
-  }, [data?.prints]);
+  }, [prints]);
 
-  if (!days.length) return <EmptyState title={loading ? "Loading release contracts…" : "No upcoming release contracts are open"} />;
-  return <div className="print-days">
+  return <section className="print-days" id="prints" aria-labelledby="prints-title">
+    <h2 className="section-title" id="prints-title">Next prints</h2>
+    {!days.length && <EmptyState title={loading ? "Loading release contracts…" : "No upcoming release contracts are open"} compact />}
     {days.map(([releaseAt, prints]) => <section className="print-day" key={releaseAt} aria-label={`Releases on ${fmtDate(releaseAt)}`}>
       <header className="print-day-head">
         <strong>{fmtDate(releaseAt, { weekday: "short", month: "short", day: "numeric", timeZone: "America/New_York" })}</strong>
@@ -61,8 +62,8 @@ export function PrintsScreen({ data, generatedAt, loading }: { data: PrintsData 
       </header>
       <div className="print-grid">{prints.map((print) => <PrintCard print={print} key={print.key} />)}</div>
     </section>)}
-    <p className="print-note">Kalshi bid/ask midpoints, smoothed so odds never rise with the strike.</p>
-  </div>;
+    {!!days.length && <p className="print-note">Kalshi bid/ask midpoints, smoothed so odds never rise with the strike.</p>}
+  </section>;
 }
 
 function PrintCard({ print }: { print: Print }) {

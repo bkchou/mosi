@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildTreasuryCurve, groupKalshiAiMarkets, isAffirmativeAiReleaseMarket, isCumulativeAiReleaseEvent, kalshiAiTickersFromRequest, overallStatus, parseAtlantaMpt, parseBeaPceSchedule, parseBlsCpiHtml, parseBlsCpiIcs, parseTreasuryYieldCsv, readRecentSnapshot, requestForcesRefresh, retainLastLiveSnapshot } from "../functions/api/data.ts";
+import { buildTreasuryCurve, groupKalshiAiMarkets, isAffirmativeAiReleaseMarket, isCumulativeAiReleaseEvent, kalshiAiTickersFromRequest, overallStatus, parseAtlantaMpt, parseTreasuryYieldCsv, readRecentSnapshot, requestForcesRefresh, retainLastLiveSnapshot } from "../functions/api/data.ts";
 
 const health = (source, status) => ({ source, status, fetchedAt: status === "unavailable" ? null : "2026-08-09T20:00:00.000Z" });
 
@@ -48,19 +48,6 @@ test("parses complete Treasury curve observations from FRED", () => {
   assert.deepEqual(parsed.map((row) => row.period), ["2026-08-06", "2026-08-10"]);
   assert.equal(parsed[1].values.DGS30, 4.11);
   assert.throws(() => parseTreasuryYieldCsv("observation_date,DGS10\n2026-08-06,3.9"));
-});
-
-test("parses official BLS CPI HTML and Eastern release time", () => {
-  const html = `<table><tr><th>Reference Month</th><th>Release Date</th><th>Release Time</th></tr><tr><td>July 2026</td><td>Aug. 12, 2026</td><td>08:30 AM</td></tr></table>`;
-  assert.deepEqual(parseBlsCpiHtml(html), [{ label: "CPI · JULY 2026", releaseAt: "2026-08-12T12:30:00.000Z", source: "BLS official calendar", sourceUrl: "https://www.bls.gov/schedule/news_release/cpi.htm" }]);
-});
-
-test("parses official BLS ICS and BEA machine-readable PCE schedule", () => {
-  const ics = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:Consumer Price Index, August 2026\r\nDTSTART:20260911T123000Z\r\nEND:VEVENT\r\nEND:VCALENDAR";
-  assert.equal(parseBlsCpiIcs(ics)[0].releaseAt, "2026-09-11T12:30:00.000Z");
-  const bea = parseBeaPceSchedule({ "Personal Income and Outlays": { release_dates: ["2026-08-26T12:30:00+00:00", "bad", "2026-08-26T12:30:00+00:00"] } });
-  assert.equal(bea.length, 1);
-  assert.equal(bea[0].releaseAt, "2026-08-26T12:30:00.000Z");
 });
 
 test("accepts only cumulative affirmative AI release contracts", () => {

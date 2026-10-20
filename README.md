@@ -4,9 +4,8 @@
 
 The screens cover:
 
-- **The Fed** — one forward graph comparing a target-rate path derived from normalized Polymarket and Kalshi meeting outcomes with the Atlanta Fed's options-implied SOFR path, followed by observed inflation, next estimates, official EFFR, and expandable Treasury context.
-- **Next Print** — for each upcoming CPI, core CPI, core PCE, payrolls, unemployment and GDP release, the distribution of reported values implied by Kalshi's "above X" ladder, with the market median, the last print (FRED), and the Cleveland Fed nowcast or Atlanta Fed GDPNow when one covers the same period.
-- **Recession** — Kalshi and Polymarket recession contracts by year (their definitions differ and are shown separately), real GDP growth with GDPNow, and five years of the Sahm rule, 10y–3m curve, jobless claims, high-yield spread, Chauvet–Piger probability and unemployment from FRED.
+- **The Fed** — FOMC decision odds, then one forward graph comparing a target-rate path derived from normalized Polymarket and Kalshi meeting outcomes with the Atlanta Fed's options-implied SOFR path. Below it, the next data prints: for each upcoming CPI, core CPI, core PCE, payrolls, unemployment and GDP release, the distribution of reported values implied by Kalshi's "above X" ladder, with the market median, the last print (FRED), and the Cleveland Fed nowcast or Atlanta Fed GDPNow when one covers the same period. Observed inflation, official EFFR, and expandable Treasury context follow.
+- **Recession** — Kalshi and Polymarket recession contracts by year (definitions differ, so venues are not averaged), real GDP growth with GDPNow, and five years of the Sahm rule, 10y–3m curve, jobless claims, high-yield spread, Chauvet–Piger probability and unemployment from FRED.
 - **AI Models** — exact market-implied median dates and central 50%/80% release intervals fitted from multiple dated contracts on one shared calendar. Venue probabilities are combined before quantiles are calculated, and unsupported tails remain explicitly open-ended.
 
 ## Data sources
@@ -23,7 +22,7 @@ Print distributions use each strike's bid/ask midpoint, fitted with pool-adjacen
 
 There are no numerical fallback forecasts. If a source or exact active contract is unavailable, MOSI shows an unavailable state rather than synthesizing a value. Market prices are informational forecasts, not investment advice.
 
-Each screen has its own cached endpoint (`/api/fed`, `/api/prints`, `/api/recession`, `/api/ai`). Each upstream provider has its own refresh window and last-good response; the header reports `LIVE`, `PARTIAL`, or `STALE` when current sources differ. Normal page loads reuse the edge cache, while the header refresh control explicitly asks providers for a fresh snapshot.
+Each screen has its own cached endpoint (`/api/fed`, `/api/recession`, `/api/ai`). Each upstream provider has its own refresh window and last-good response; the header reports `LIVE`, `PARTIAL`, or `STALE` when current sources differ. Normal page loads reuse the edge cache, while the header refresh control explicitly asks providers for a fresh snapshot.
 
 ## Local development
 

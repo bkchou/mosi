@@ -4,15 +4,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { buildConsensus, buildExpectedPolicyPath, fitDatedQuantiles, percentagesToTenths, timePosition } from "../lib/marketMath";
 import { mergeWithLocalCache, storedCache, type CacheEnvelope, type LocalFallback, type StoredFeedCache } from "../lib/localFeedCache";
 import { EmptyState, PanelHeading, fmtDate, fmtTime } from "./ui";
-import { PrintsScreen, type PrintsData } from "./PrintsScreen";
+import { NextPrints, type PrintsData } from "./NextPrints";
 import { RecessionScreen, type RecessionData } from "./RecessionScreen";
 import { buildMedianHistory, weeklyMedianMovement, type PriceHistoryPoint } from "../lib/forecastHistory";
 
-export type Screen = "fed" | "prints" | "recession" | "models";
+export type Screen = "fed" | "recession" | "models";
 
 const screens: Record<Screen, { path: string; nav: string; api: string; title: string; dek: string }> = {
-  fed: { path: "/", nav: "The Fed", api: "/api/fed", title: "Where rates go next.", dek: "FOMC decision odds, the options-implied rate path, and inflation." },
-  prints: { path: "/next-print", nav: "Next Print", api: "/api/prints", title: "What the next print says.", dek: "Kalshi odds for upcoming U.S. data releases." },
+  fed: { path: "/", nav: "The Fed", api: "/api/fed", title: "Where rates go next.", dek: "FOMC decision odds, the options-implied rate path, the next data prints, and inflation." },
   recession: { path: "/recession", nav: "Recession", api: "/api/recession", title: "Is a recession coming?", dek: "Recession odds and leading indicators." },
   models: { path: "/ai-models", nav: "AI Models", api: "/api/ai", title: "When the next models land.", dek: "Release dates implied by Polymarket and Kalshi." },
 };
@@ -44,7 +43,6 @@ type Decision = { label: string; meetingDate: string | null; venues: Array<{ ven
 type InflationPoint = { period: string; value: number };
 type InflationMetric = { label: string; value: number; priorValue: number; delta: number; period: string; seriesId: string; source: string; sourceUrl: string; nextEstimate: number | null; nextEstimatePeriod: string | null; nextEstimateSource: string | null; history: InflationPoint[] };
 type VenueStatus = { venue: Venue; status: "live" | "unavailable" | "no_active_market"; sourceUrl: string; note?: string };
-type Release = { label: string; releaseAt: string; source: string; sourceUrl: string };
 type Forecast = { company: string; model: string; color: string; source: string; sourceUrl: string; status: string; points: MarketQuote[] };
 type SofrPath = { asOf: string; currentTargetRange: string; points: Array<{ period: string; midpoint: number; low: number; high: number }>; source: string; sourceUrl: string };
 type TreasuryCurve = { asOf: string; curves: Array<{ label: string; period: string; points: Array<{ label: string; years: number; value: number }> }>; spreads: { twoTen: number; threeMonthTen: number }; source: string; sourceUrl: string };
@@ -53,12 +51,12 @@ type FedData = {
   inflation: InflationMetric[];
   decisions: Decision[];
   venues: VenueStatus[];
-  releases: Release[];
+  prints?: PrintsData["prints"];
   sofrPath: SofrPath | null;
   treasury: TreasuryCurve | null;
 };
 type AiData = { forecasts: Forecast[]; evidence: MarketQuote[] };
-type FeedData = FedData | AiData | PrintsData | RecessionData;
+type FeedData = FedData | AiData | RecessionData;
 type FeedStatus = "live" | "partial" | "stale";
 type FeedSource = { source: string; status: "live" | "stale" | "unavailable"; fetchedAt: string | null; note?: string };
 type FeedEnvelope<T> = { generatedAt: string; status: FeedStatus; sources: FeedSource[]; data: T };
@@ -151,7 +149,6 @@ export function MosiDashboard({ screen }: { screen: Screen }) {
         {!!localFallbacks.length && <div className="local-cache-note" role="status"><strong>KALSHI LOCAL SNAPSHOT</strong><span>{cacheAge(localFallbacks.map((item) => item.cachedAt).sort()[0])} · current refresh rate-limited · stored only on this device</span></div>}
 
         {error && !feed ? <EmptyState title="Live data is unavailable" detail={error} /> : screen === "fed" ? <FedScreen data={fedData ?? null} generatedAt={feed?.generatedAt ?? null} loading={loading} />
-          : screen === "prints" ? <PrintsScreen data={feed?.data as PrintsData | undefined ?? null} generatedAt={feed?.generatedAt ?? null} loading={loading} />
           : screen === "recession" ? <RecessionScreen data={feed?.data as RecessionData | undefined ?? null} generatedAt={feed?.generatedAt ?? null} loading={loading} />
           : <ModelsScreen data={aiData ?? null} generatedAt={feed?.generatedAt ?? null} loading={loading} />}
       </main>
@@ -219,6 +216,8 @@ function FedScreen({ data, generatedAt, loading }: { data: FedData | null; gener
           <div className="policy-source-line"><span>50+ bp outcomes count as 50 bp.</span>{data?.sofrPath && <a href={data.sofrPath.sourceUrl} target="_blank" rel="noreferrer">Atlanta Fed SOFR model · {data.sofrPath.asOf} ↗</a>}</div>
         </article>
 
+        <NextPrints prints={data?.prints ?? []} generatedAt={generatedAt} loading={loading} />
+
         <article className="panel inflation-path-panel">
           <PanelHeading title="Year-over-year inflation" aside="Solid observed · dashed Cleveland Fed nowcast" />
           {!!data?.inflation.length && <InflationHistory metrics={data.inflation} />}
@@ -232,10 +231,6 @@ function FedScreen({ data, generatedAt, loading }: { data: FedData | null; gener
         </details>
       </section>
 
-      {!!data?.releases.length && <section className="release-tape" aria-label="Upcoming inflation releases">
-        <div><span>NEXT RELEASES</span><strong>Inflation data</strong></div>
-        {data.releases.map((release) => <a href={release.sourceUrl} target="_blank" rel="noreferrer" key={release.label}><span>{release.label}</span><strong>{fmtDate(release.releaseAt, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/New_York", timeZoneName: "short" })}</strong><small>{release.source}</small></a>)}
-      </section>}
     </>
   );
 }
