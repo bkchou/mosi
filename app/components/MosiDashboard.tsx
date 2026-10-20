@@ -136,7 +136,7 @@ export function MosiDashboard({ screen }: { screen: Screen }) {
           <div>
             <p className="eyebrow">{screen === "fed" ? "MONETARY POLICY" : "FRONTIER MODEL RELEASES"}</p>
             <h1>{screen === "fed" ? "Where rates go next." : "When the next models land."}</h1>
-            <p className="dek">{screen === "fed" ? "Two views of where rates may go—prediction-market meeting outcomes and the options-implied SOFR path—followed by observed inflation and next estimates." : "Market-implied release dates from Polymarket and Kalshi contracts."}</p>
+            <p className="dek">{screen === "fed" ? "FOMC decision odds from prediction markets, the options-implied rate path, and the inflation data behind both." : "Market-implied release dates from Polymarket and Kalshi contracts."}</p>
           </div>
         </section>
 
@@ -151,9 +151,18 @@ export function MosiDashboard({ screen }: { screen: Screen }) {
 
 const policyMoves: Record<string, number> = { "Cut 50+ bp": -50, "Cut 25 bp": -25, "No change": 0, "Hike 25 bp": 25, "Hike 50+ bp": 50 };
 
-function targetMidpoint(range: string | undefined, fallback: number | null | undefined) {
+function targetRange(range: string | undefined) {
   const values = range?.match(/\d+(?:\.\d+)?/g)?.map(Number) ?? [];
-  return values.length >= 2 ? (values[0] + values[1]) / 200 : fallback ?? null;
+  return values.length >= 2 ? { low: values[0] / 100, high: values[1] / 100 } : null;
+}
+
+// Decision markets close at 11:59 PM ET on announcement day, so the ET date is the meeting date.
+function fmtMeeting(value: string | null, options: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" }) {
+  return fmtDate(value, { ...options, timeZone: "America/New_York" });
+}
+
+function signedBp(value: number) {
+  return `${value >= 0 ? "+" : "−"}${Math.abs(value).toFixed(0)} bp`;
 }
 
 function FedScreen({ data, generatedAt, loading }: { data: FedData | null; generatedAt: string | null; loading: boolean }) {
@@ -164,50 +173,56 @@ function FedScreen({ data, generatedAt, loading }: { data: FedData | null; gener
     const displayMeans = percentagesToTenths(consensus.map((outcome) => outcome.mean));
     return consensus.map((outcome, index) => ({ ...outcome, displayMean: displayMeans[index] }));
   }, [consensus]);
-  const currentTargetMidpoint = targetMidpoint(data?.sofrPath?.currentTargetRange, data?.effectiveRate?.value);
+  const range = targetRange(data?.sofrPath?.currentTargetRange);
+  const currentTargetMidpoint = range ? (range.low + range.high) / 2 : data?.effectiveRate?.value ?? null;
   const policyPath = useMemo(() => currentTargetMidpoint == null ? [] : buildExpectedPolicyPath(data?.decisions ?? [], currentTargetMidpoint, outcomeOrder, policyMoves), [currentTargetMidpoint, data?.decisions]);
-  const nextMeeting = policyPath[0];
+  const lastMeeting = policyPath.at(-1);
   const finalSofr = data?.sofrPath?.points.at(-1);
 
   return (
     <>
       <section className="dashboard-grid fed-story-grid">
-        <article className="panel policy-path-panel">
-          <PanelHeading kicker="FORWARD POLICY" title="Market-implied rate paths" aside="Meeting target path + expected 3-month SOFR" />
-          <div className="policy-summary" aria-label="Forward policy summary">
-            <div><span>CURRENT EFFR</span><strong>{data?.effectiveRate?.value == null ? "—" : `${data.effectiveRate.value.toFixed(2)}%`}</strong><small>{data?.effectiveRate?.period ?? "Unavailable"}</small></div>
-            <div><span>NEXT MEETING EXPECTED TARGET</span><strong>{nextMeeting ? `${nextMeeting.expectedRate.toFixed(2)}%` : "—"}</strong><small>{nextMeeting ? `${nextMeeting.expectedMove >= 0 ? "+" : ""}${nextMeeting.expectedMove.toFixed(0)} bp expected · ${fmtDate(nextMeeting.meetingDate, { month: "short", day: "numeric", timeZone: "UTC" })}` : "No complete market"}</small></div>
-            <div><span>FURTHEST SOFR MEAN</span><strong>{finalSofr ? `${finalSofr.midpoint.toFixed(2)}%` : "—"}</strong><small>{finalSofr ? fmtDate(`${finalSofr.period}T00:00:00Z`, { month: "short", year: "numeric", timeZone: "UTC" }) : "Atlanta Fed unavailable"}</small></div>
-          </div>
-          {data?.sofrPath && currentTargetMidpoint != null && generatedAt ? <PolicyPathGraph currentRate={currentTargetMidpoint} effectiveRate={data.effectiveRate?.value ?? null} meetings={policyPath} sofr={data.sofrPath} now={Date.parse(generatedAt)} /> : <EmptyState title={loading ? "Building the forward path…" : "Forward policy path unavailable"} detail="No substitute path is shown." compact />}
-          <details className="meeting-disclosure" id="fed-meeting-contracts">
-            <summary><span>Meeting probabilities and contracts</span><small>{data?.decisions.length ? `${data.decisions.length} meetings · select for exact quotes` : "No active contracts"}</small></summary>
-            {data?.decisions.length ? <>
-              <div className="decision-tabs" role="tablist" aria-label="Fed meeting">
-                {data.decisions.map((item, index) => <button key={item.label} type="button" className={index === selectedIndex ? "active" : ""} onClick={() => setSelectedIndex(index)}>{fmtDate(item.meetingDate, { month: "short", day: "numeric", timeZone: "UTC" })}<small>{item.label}</small></button>)}
-              </div>
-              <ConsensusGraph outcomes={displayedConsensus} />
+        <article className="panel decision-panel" id="fed-decision">
+          <PanelHeading kicker="FOMC DECISION ODDS" title={decision ? `${fmtMeeting(decision.meetingDate, { month: "long", day: "numeric", year: "numeric" })} meeting` : "No active decision markets"} aside={independentVenues.map((venue) => venue.venue).join(" + ")} />
+          {data?.decisions.length ? <>
+            {data.decisions.length > 1 && <div className="decision-tabs" role="tablist" aria-label="FOMC meeting">
+              {data.decisions.map((item, index) => <button key={item.label} type="button" role="tab" aria-selected={index === selectedIndex} className={index === selectedIndex ? "active" : ""} onClick={() => setSelectedIndex(index)}>{fmtMeeting(item.meetingDate)}</button>)}
+            </div>}
+            <ConsensusGraph outcomes={displayedConsensus} />
+            <details className="meeting-disclosure">
+              <summary><span>Contracts</span><small>{independentVenues.reduce((sum, venue) => sum + venue.outcomes.length, 0)} quotes</small></summary>
               <MeetingContracts venues={independentVenues} />
-            </> : <EmptyState title="No active Fed decision contracts found" detail="No substitute probabilities are shown." compact />}
-          </details>
-          <div className="policy-source-line"><span>Prediction markets: complete Polymarket/Kalshi venues, normalized then equally weighted.</span>{data?.sofrPath && <a href={data.sofrPath.sourceUrl} target="_blank" rel="noreferrer">Atlanta Fed SOFR model · {data.sofrPath.asOf} ↗</a>}</div>
+            </details>
+          </> : <EmptyState title={loading ? "Loading decision markets…" : "No active Fed decision contracts found"} compact />}
+          <div className="policy-source-line"><span>Polymarket and Kalshi quotes are normalized to 100% and equally weighted. Pascal mirrors Polymarket, so it is not counted.</span></div>
+        </article>
+
+        <article className="panel policy-path-panel">
+          <PanelHeading kicker="RATE PATH" title="Expected policy rate" aside="Meetings from prediction markets · 3-month SOFR from options" />
+          <div className="policy-summary" aria-label="Rate path summary">
+            <div><span>TARGET RANGE</span><strong>{range ? `${range.low.toFixed(2)}–${range.high.toFixed(2)}%` : "—"}</strong><small>{data?.effectiveRate?.value == null ? "EFFR unavailable" : `EFFR ${data.effectiveRate.value.toFixed(2)}% · ${fmtDate(`${data.effectiveRate.period}T00:00:00Z`, { month: "short", day: "numeric", timeZone: "UTC" })}`}</small></div>
+            <div><span>{lastMeeting ? `EXPECTED AFTER ${fmtMeeting(lastMeeting.meetingDate).toUpperCase()}` : "EXPECTED TARGET"}</span><strong>{lastMeeting ? `${lastMeeting.expectedRate.toFixed(2)}%` : "—"}</strong><small>{lastMeeting && currentTargetMidpoint != null ? `${signedBp((lastMeeting.expectedRate - currentTargetMidpoint) * 100)} over ${policyPath.length} meeting${policyPath.length === 1 ? "" : "s"}` : "No complete market"}</small></div>
+            <div><span>{finalSofr ? `3M SOFR · ${fmtDate(`${finalSofr.period}T00:00:00Z`, { month: "short", year: "numeric", timeZone: "UTC" }).toUpperCase()}` : "3M SOFR"}</span><strong>{finalSofr ? `${finalSofr.midpoint.toFixed(2)}%` : "—"}</strong><small>{finalSofr ? `${finalSofr.low.toFixed(2)}–${finalSofr.high.toFixed(2)}% middle 50%` : "Atlanta Fed unavailable"}</small></div>
+          </div>
+          {data?.sofrPath && currentTargetMidpoint != null && generatedAt ? <PolicyPathGraph currentRate={currentTargetMidpoint} effectiveRate={data.effectiveRate?.value ?? null} meetings={policyPath} sofr={data.sofrPath} now={Date.parse(generatedAt)} /> : <EmptyState title={loading ? "Loading the rate path…" : "Rate path unavailable"} compact />}
+          <div className="policy-source-line"><span>Expected move = probability-weighted outcomes; 50+ bp outcomes count as 50 bp.</span>{data?.sofrPath && <a href={data.sofrPath.sourceUrl} target="_blank" rel="noreferrer">Atlanta Fed SOFR model · {data.sofrPath.asOf} ↗</a>}</div>
         </article>
 
         <article className="panel inflation-path-panel">
-          <PanelHeading kicker="INFLATION PATH" title="Observed inflation + next estimate" aside="History solid · Cleveland Fed nowcast dashed" />
+          <PanelHeading kicker="INFLATION" title="Year-over-year inflation" aside="Solid observed · dashed Cleveland Fed nowcast" />
           {!!data?.inflation.length && <InflationHistory metrics={data.inflation} />}
           {!!data?.inflation.length && <InflationReadout metrics={data.inflation} />}
-          {!data?.inflation.length && <EmptyState title={loading ? "Syncing inflation…" : "Inflation observations unavailable"} detail="No substitute values are shown." compact />}
+          {!data?.inflation.length && <EmptyState title={loading ? "Loading inflation…" : "Inflation observations unavailable"} compact />}
         </article>
 
         <details className="panel treasury-disclosure">
           <summary><div><span>RATES CONTEXT</span><strong>Treasury yield curve</strong></div><small>{data?.treasury ? `10Y ${data.treasury.curves[0]?.points.find((point) => point.label === "10Y")?.value.toFixed(2) ?? "—"}% · 2s10s ${(data.treasury.spreads.twoTen * 100).toFixed(0)} bp · ${data.treasury.asOf}` : "Unavailable"}</small></summary>
-          {data?.treasury ? <TreasuryCurveGraph data={data.treasury} /> : <EmptyState title={loading ? "Syncing Treasury curve…" : "Treasury curve unavailable"} detail="No substitute yields are shown." compact />}
+          {data?.treasury ? <TreasuryCurveGraph data={data.treasury} /> : <EmptyState title={loading ? "Loading Treasury curve…" : "Treasury curve unavailable"} compact />}
         </details>
       </section>
 
       {!!data?.releases.length && <section className="release-tape" aria-label="Upcoming inflation releases">
-        <div><span>NEXT RELEASES</span><strong>Official agency calendar</strong></div>
+        <div><span>NEXT RELEASES</span><strong>Inflation data</strong></div>
         {data.releases.map((release) => <a href={release.sourceUrl} target="_blank" rel="noreferrer" key={release.label}><span>{release.label}</span><strong>{fmtDate(release.releaseAt, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/New_York", timeZoneName: "short" })}</strong><small>{release.source}</small></a>)}
       </section>}
     </>
@@ -244,12 +259,12 @@ function PolicyPathGraph({ currentRate, effectiveRate, meetings, sofr, now }: { 
       <polygon className="policy-sofr-band" points={band} />
       <path className="policy-sofr-line" d={sofrLine} />
       <path className="policy-meeting-line" d={meetingLine} />
-      <g className="policy-current-point interactive-point" tabIndex={0} role="img" aria-label={`Current target midpoint ${currentRate.toFixed(3)} percent${effectiveRate == null ? "" : `, effective federal funds rate ${effectiveRate.toFixed(3)} percent`}`} {...inspect({ label: "TODAY", value: `${currentRate.toFixed(3)}% target midpoint`, detail: effectiveRate == null ? "EFFR unavailable" : `${effectiveRate.toFixed(3)}% effective federal funds rate`, kind: "meeting" })}><circle cx={x(now)} cy={y(currentRate)} r="5" /><text x={x(now) + 10} y={y(currentRate) - 9}>TODAY · {currentRate.toFixed(2)}%</text>{effectiveRate != null && <text x={x(now) + 10} y={y(currentRate) + 17}>EFFR {effectiveRate.toFixed(2)}%</text>}</g>
-      {meetingPoints.map((point) => <g className="policy-meeting-point interactive-point" tabIndex={0} role="img" aria-label={`${point.label}, ${point.expectedRate.toFixed(3)} percent expected target midpoint, ${point.expectedMove >= 0 ? "+" : ""}${point.expectedMove.toFixed(1)} basis points expected decision`} {...inspect({ label: `${fmtDate(point.meetingDate, { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" })} FOMC`, value: `${point.expectedRate.toFixed(3)}% expected target midpoint`, detail: `${point.expectedMove >= 0 ? "+" : ""}${point.expectedMove.toFixed(1)} bp expected decision`, kind: "meeting" })} key={point.meetingDate}><circle cx={x(point.timestamp)} cy={y(point.expectedRate)} r="5" /><text x={x(point.timestamp)} y={y(point.expectedRate) - 11}>{point.expectedRate.toFixed(2)}%</text><text className="date" x={x(point.timestamp)} y={y(point.expectedRate) + 18}>{fmtDate(point.meetingDate, { month: "short", day: "numeric", timeZone: "UTC" }).toUpperCase()}</text></g>)}
+      <g className="policy-current-point interactive-point" tabIndex={0} role="img" aria-label={`Current target midpoint ${currentRate.toFixed(3)} percent${effectiveRate == null ? "" : `, effective federal funds rate ${effectiveRate.toFixed(3)} percent`}`} {...inspect({ label: "TODAY", value: `${currentRate.toFixed(3)}% target midpoint`, detail: effectiveRate == null ? "EFFR unavailable" : `${effectiveRate.toFixed(3)}% effective federal funds rate`, kind: "meeting" })}><circle cx={x(now)} cy={y(currentRate)} r="5" /></g>
+      {meetingPoints.map((point) => <g className="policy-meeting-point interactive-point" tabIndex={0} role="img" aria-label={`${point.label}, ${point.expectedRate.toFixed(3)} percent expected target midpoint, ${point.expectedMove >= 0 ? "+" : ""}${point.expectedMove.toFixed(1)} basis points expected decision`} {...inspect({ label: `${fmtMeeting(point.meetingDate, { month: "long", day: "numeric", year: "numeric" })} FOMC`, value: `${point.expectedRate.toFixed(3)}% expected target midpoint`, detail: `${point.expectedMove >= 0 ? "+" : ""}${point.expectedMove.toFixed(1)} bp expected decision`, kind: "meeting" })} key={point.meetingDate}><circle cx={x(point.timestamp)} cy={y(point.expectedRate)} r="5" /><text x={x(point.timestamp)} y={y(point.expectedRate) - 11}>{point.expectedRate.toFixed(2)}%</text><text className="date" x={x(point.timestamp)} y={y(point.expectedRate) + 18}>{fmtMeeting(point.meetingDate).toUpperCase()}</text></g>)}
       {sofrPoints.map((point) => <g className="policy-sofr-point interactive-point" tabIndex={0} role="img" aria-label={`${fmtDate(`${point.period}T00:00:00Z`, { month: "long", year: "numeric", timeZone: "UTC" })}, expected three-month SOFR ${point.midpoint.toFixed(3)} percent, interquartile range ${point.low.toFixed(3)} to ${point.high.toFixed(3)} percent`} {...inspect({ label: `${fmtDate(`${point.period}T00:00:00Z`, { month: "long", year: "numeric", timeZone: "UTC" })} 3-month SOFR`, value: `${point.midpoint.toFixed(3)}% expected`, detail: `${point.low.toFixed(3)}–${point.high.toFixed(3)}% interquartile range`, kind: "sofr" })} key={point.period}><circle cx={x(point.timestamp)} cy={y(point.midpoint)} r="4" /><text x={x(point.timestamp)} y={y(point.midpoint) + 18}>{point.midpoint.toFixed(2)}%</text></g>)}
     </svg>
-    <div className={`graph-inspector ${inspected?.kind ?? ""}`} aria-live="polite"><span>{inspected?.label ?? "EXACT VALUES"}</span><strong>{inspected?.value ?? "Hover, tap, or focus any point"}</strong><small>{inspected?.detail ?? "Black is the expected Fed target midpoint; orange is expected 3-month SOFR."}</small></div>
-    <div className="policy-legend"><a href="#fed-meeting-contracts"><i className="meetings" /> Prediction-market target path ↓</a><a href={sofr.sourceUrl} target="_blank" rel="noreferrer"><i className="sofr" /> Atlanta Fed 3-month SOFR ↗</a><span><i className="band" /> SOFR 25–75% range</span><small>50+ bp outcomes represented at ±50 bp</small></div>
+    <div className={`graph-inspector ${inspected?.kind ?? "meeting"}`} aria-live="polite"><span>{inspected?.label ?? "TODAY"}</span><strong>{inspected?.value ?? `${currentRate.toFixed(3)}% target midpoint`}</strong><small>{inspected?.detail ?? (effectiveRate == null ? "EFFR unavailable" : `${effectiveRate.toFixed(3)}% effective federal funds rate`)}</small></div>
+    <div className="policy-legend"><a href="#fed-decision"><i className="meetings" /> Expected target midpoint</a><span><i className="sofr" /> Expected 3-month SOFR</span><span><i className="band" /> SOFR middle 50%</span></div>
   </div>;
 }
 
@@ -261,7 +276,7 @@ function MeetingContracts({ venues }: { venues: Decision["venues"] }) {
 }
 
 function InflationReadout({ metrics }: { metrics: InflationMetric[] }) {
-  return <div className="inflation-readout">{metrics.map((metric) => <a href={metric.sourceUrl} target="_blank" rel="noreferrer" key={metric.seriesId}><span>{metric.label}</span><strong>{metric.value.toFixed(1)}%</strong><small>PREV {metric.priorValue.toFixed(1)}%{metric.nextEstimate == null ? "" : ` · NEXT ${metric.nextEstimate.toFixed(1)}%`}</small></a>)}</div>;
+  return <div className="inflation-readout">{metrics.map((metric) => <a href={metric.sourceUrl} target="_blank" rel="noreferrer" key={metric.seriesId}><span>{inflationGraphColors[metric.seriesId] && <i style={{ background: inflationGraphColors[metric.seriesId] }} />}{metric.label}</span><strong>{metric.value.toFixed(1)}%</strong><small>PREV {metric.priorValue.toFixed(1)}%{metric.nextEstimate == null ? "" : ` · NEXT ${metric.nextEstimate.toFixed(1)}%`}</small></a>)}</div>;
 }
 
 function TreasuryCurveGraph({ data }: { data: TreasuryCurve }) {
@@ -318,7 +333,7 @@ function InflationHistory({ metrics }: { metrics: InflationMetric[] }) {
   while (cursor.getTime() <= end) { if (cursor.getUTCMonth() === 0 || cursor.getUTCMonth() === 6) monthTicks.push(cursor.getTime()); cursor.setUTCMonth(cursor.getUTCMonth() + 1); }
   const inspect = (value: NonNullable<typeof inspected>) => ({ onPointerEnter: () => setInspected(value), onPointerDown: () => setInspected(value), onFocus: () => setInspected(value), onBlur: () => setInspected(null) });
   return <div className="inflation-history">
-    <div className="graph-toolbar"><div><span>VIEW</span><button type="button" aria-pressed={rangeMonths === 12} className={rangeMonths === 12 ? "active" : ""} onClick={() => setRangeMonths(12)}>1Y</button><button type="button" aria-pressed={rangeMonths === 36} className={rangeMonths === 36 ? "active" : ""} onClick={() => setRangeMonths(36)}>3Y</button></div><small>HOVER / TAP FOR EXACT VALUES · DRAG HORIZONTALLY ON SMALL SCREENS</small></div>
+    <div className="graph-toolbar"><div><span>VIEW</span><button type="button" aria-pressed={rangeMonths === 12} className={rangeMonths === 12 ? "active" : ""} onClick={() => setRangeMonths(12)}>1Y</button><button type="button" aria-pressed={rangeMonths === 36} className={rangeMonths === 36 ? "active" : ""} onClick={() => setRangeMonths(36)}>3Y</button></div></div>
     <svg viewBox="0 0 1000 244" role="group" aria-label="Historical year-over-year inflation rates with next-period Cleveland Fed nowcasts">
       <text className="graph-axis-unit" x="4" y="13">YOY %</text>
       {end > observedEnd && <rect className="forecast-zone" x={x(observedEnd)} y={plot.top} width={Math.max(0, x(end) - x(observedEnd))} height={plot.bottom - plot.top} />}
@@ -343,8 +358,7 @@ function InflationHistory({ metrics }: { metrics: InflationMetric[] }) {
         </g>;
       })}
     </svg>
-    <div className="graph-inspector inflation-inspector" aria-live="polite"><span>{inspected?.label ?? "EXACT VALUES"}</span><strong>{inspected?.value ?? "Hover, tap, or focus any point"}</strong><small>{inspected?.detail ?? "Solid lines are observed year-over-year rates; dashed segments are Cleveland Fed next-month nowcasts."}</small></div>
-    <div className="inflation-legend">{series.map((metric) => <a href={metric.sourceUrl} target="_blank" rel="noreferrer" key={metric.seriesId}><i style={{ background: inflationGraphColors[metric.seriesId] }} /><span>{metric.label}</span><strong>{metric.value.toFixed(1)}%{metric.nextEstimate == null ? "" : ` → ${metric.nextEstimate.toFixed(1)}%`}</strong></a>)}</div>
+    <div className="graph-inspector inflation-inspector" aria-live="polite"><span>{inspected?.label ?? series[0].label}</span><strong>{inspected?.value ?? `${series[0].value.toFixed(2)}%`}</strong><small>{inspected?.detail ?? `${fmtDate(`${series[0].period}T00:00:00Z`, { month: "long", year: "numeric", timeZone: "UTC" })} · observed ${series[0].source}`}</small></div>
   </div>;
 }
 
@@ -432,12 +446,16 @@ function ModelsScreen({ data, generatedAt, loading }: { data: AiData | null; gen
 }
 
 function TimelineAxis({ bounds, months, now }: { bounds: { start: number; end: number }; months: number[]; now: number }) {
+  const today = timePosition(now, bounds);
   return <div className="calendar-axis"><span className="axis-spacer" /><div className="timeline-axis">{months.map((month, index) => {
+    // Skip labels the TODAY marker would cover; the first label is left-aligned and wider.
+    const position = timePosition(month, bounds);
+    if (Math.abs(position - today) < 4 || (index === 0 && today - position < 9)) return null;
     const date = new Date(month);
     const label = fmtDate(date.toISOString(), { month: "short", timeZone: "UTC" }).toUpperCase();
     const showYear = index === 0 || date.getUTCMonth() === 0;
-    return <span className={index === 0 ? "first" : index === months.length - 1 ? "last" : ""} style={{ left: `${timePosition(month, bounds)}%` }} key={month}>{label}{showYear ? ` · ${date.getUTCFullYear()}` : ""}</span>;
-  })}<i className="today-axis" style={{ left: `${timePosition(now, bounds)}%` }}><b>TODAY</b><small>{fmtDate(new Date(now).toISOString(), { month: "short", day: "numeric" }).toUpperCase()}</small></i></div><span>DETAIL</span></div>;
+    return <span className={index === 0 ? "first" : index === months.length - 1 ? "last" : ""} style={{ left: `${position}%` }} key={month}>{label}{showYear ? ` · ${date.getUTCFullYear()}` : ""}</span>;
+  })}<i className="today-axis" style={{ left: `${today}%` }}><b>TODAY</b><small>{fmtDate(new Date(now).toISOString(), { month: "short", day: "numeric" }).toUpperCase()}</small></i></div><span>DETAIL</span></div>;
 }
 
 function CalendarGuides({ bounds, months, now }: { bounds: { start: number; end: number }; months: number[]; now: number }) {

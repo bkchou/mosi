@@ -23,11 +23,11 @@ test("server-renders the Fed dashboard", async () => {
   assert.match(html, /Monitoring/);
   assert.match(html, /-the-/);
   assert.match(html, /Situation/);
-  assert.match(html, /Market-implied rate paths/);
-  assert.match(html, /Meeting probabilities and contracts/);
-  assert.match(html, /Observed inflation \+ next estimate/);
+  assert.match(html, /FOMC DECISION ODDS/);
+  assert.match(html, /Expected policy rate/);
+  assert.match(html, /Year-over-year inflation/);
   assert.match(html, /Treasury yield curve/);
-  assert.match(html, /History solid · Cleveland Fed nowcast dashed/);
+  assert.match(html, /Solid observed · dashed Cleveland Fed nowcast/);
   assert.doesNotMatch(html, /61%|58%|3 of 4 venues|−51 bp/);
   assert.doesNotMatch(html, /codex-preview|Building your site|react-loading-skeleton/);
 });

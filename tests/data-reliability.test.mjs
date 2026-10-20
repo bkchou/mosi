@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildTreasuryCurve, groupKalshiAiMarkets, isAffirmativeAiReleaseMarket, isCumulativeAiReleaseEvent, kalshiAiTickersFromRequest, overallStatus, parseAtlantaMpt, parseBeaPceSchedule, parseBlsCpiHtml, parseBlsCpiIcs, parseTreasuryYieldXml, readRecentSnapshot, requestForcesRefresh, retainLastLiveSnapshot } from "../functions/api/data.ts";
+import { buildTreasuryCurve, groupKalshiAiMarkets, isAffirmativeAiReleaseMarket, isCumulativeAiReleaseEvent, kalshiAiTickersFromRequest, overallStatus, parseAtlantaMpt, parseBeaPceSchedule, parseBlsCpiHtml, parseBlsCpiIcs, parseTreasuryYieldCsv, readRecentSnapshot, requestForcesRefresh, retainLastLiveSnapshot } from "../functions/api/data.ts";
 
 const health = (source, status) => ({ source, status, fetchedAt: status === "unavailable" ? null : "2026-08-09T20:00:00.000Z" });
 
@@ -42,14 +42,12 @@ test("parses Atlanta Fed published SOFR path without synthetic values", () => {
   assert.equal(parsed.points.length, 4);
 });
 
-test("parses complete official Treasury curve observations", () => {
-  const fields = (date, offset) => `<entry><m:properties><d:NEW_DATE m:type="Edm.DateTime">${date}T00:00:00</d:NEW_DATE>${[
-    ["BC_3MONTH", 3.5], ["BC_1YEAR", 3.6], ["BC_2YEAR", 3.7], ["BC_5YEAR", 3.8], ["BC_10YEAR", 3.9], ["BC_30YEAR", 4.1],
-  ].map(([key, value]) => `<d:${key} m:type="Edm.Double">${value + offset}</d:${key}>`).join("")}</m:properties></entry>`;
-  const parsed = parseTreasuryYieldXml(`<feed>${fields("2026-08-06", 0)}${fields("2026-08-07", .01)}</feed>`);
-  assert.equal(parsed.length, 2);
-  assert.equal(parsed[1].period, "2026-08-07");
-  assert.equal(parsed[1].values.BC_30YEAR, 4.109999999999999);
+test("parses complete Treasury curve observations from FRED", () => {
+  const csv = "observation_date,DGS3MO,DGS1,DGS2,DGS5,DGS10,DGS30\n2026-08-06,3.5,3.6,3.7,3.8,3.9,4.1\n2026-08-07,,3.6,3.7,3.8,3.9,4.1\n2026-08-10,3.51,3.61,3.71,3.81,3.91,4.11\n";
+  const parsed = parseTreasuryYieldCsv(csv);
+  assert.deepEqual(parsed.map((row) => row.period), ["2026-08-06", "2026-08-10"]);
+  assert.equal(parsed[1].values.DGS30, 4.11);
+  assert.throws(() => parseTreasuryYieldCsv("observation_date,DGS10\n2026-08-06,3.9"));
 });
 
 test("parses official BLS CPI HTML and Eastern release time", () => {
@@ -72,9 +70,8 @@ test("accepts only cumulative affirmative AI release contracts", () => {
   assert.equal(isAffirmativeAiReleaseMarket("Will there be no next Gemini Pro release by August 31, 2026?"), false);
 });
 
-test("Treasury rollover tolerates an empty current-year feed and keeps valid comparison labels", () => {
-  assert.deepEqual(parseTreasuryYieldXml("<feed></feed>", true), []);
-  const values = { BC_3MONTH: 3.5, BC_1YEAR: 3.6, BC_2YEAR: 3.7, BC_5YEAR: 3.8, BC_10YEAR: 3.9, BC_30YEAR: 4.1 };
+test("Treasury curve keeps valid comparison labels", () => {
+  const values = { DGS3MO: 3.5, DGS1: 3.6, DGS2: 3.7, DGS5: 3.8, DGS10: 3.9, DGS30: 4.1 };
   const curve = buildTreasuryCurve([
     { period: "2024-12-30", values },
     { period: "2025-11-28", values },
@@ -82,6 +79,7 @@ test("Treasury rollover tolerates an empty current-year feed and keeps valid com
   ]);
   assert.equal(curve.asOf, "2025-12-31");
   assert.deepEqual(curve.curves.map((item) => [item.label, item.period]), [["Latest", "2025-12-31"], ["1 month ago", "2025-11-28"], ["1 year ago", "2024-12-30"]]);
+  assert.equal(curve.spreads.twoTen.toFixed(2), "0.20");
 });
 
 test("partial refresh retains the prior live data while exposing current health", async () => {

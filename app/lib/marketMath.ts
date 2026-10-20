@@ -3,7 +3,7 @@ export type ConsensusVenue = {
   outcomes: Array<{ label: string; probability: number }>;
 };
 
-export function buildConsensus(venues: ConsensusVenue[], labels: string[]) {
+export function buildConsensus<V extends ConsensusVenue>(venues: V[], labels: string[]) {
   const eligibleVenues = venues.filter((venue) =>
     (venue.venue === "Polymarket" || venue.venue === "Kalshi") &&
     labels.every((label) => venue.outcomes.some((outcome) => outcome.label === label)),

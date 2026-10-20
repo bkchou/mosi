@@ -71,7 +71,6 @@ const EFFR_API = "https://markets.newyorkfed.org/api/rates/unsecured/effr/last/1
 const CLEVELAND_NOWCAST = "https://www.clevelandfed.org/-/media/files/webcharts/inflationnowcasting/nowcast_year.json";
 const ATLANTA_MPT = "https://www.atlantafed.org/cenfis/market-probability-tracker?item=D52F87BB-8391-466C-BC80-C44F5A8CD63D";
 const TREASURY_YIELD_CURVE = "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?type=daily_treasury_yield_curve";
-const TREASURY_XML = "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=daily_treasury_yield_curve";
 const BLS_CPI_SCHEDULE = "https://www.bls.gov/schedule/news_release/cpi.htm";
 const BLS_RELEASE_ICS = "https://www.bls.gov/schedule/news_release/bls.ics";
 const BEA_RELEASE_DATES = "https://apps.bea.gov/API/signup/release_dates.json";
@@ -737,29 +736,30 @@ async function atlantaMpt() {
 }
 
 type TreasuryObservation = { period: string; values: Record<string, number> };
+// FRED republishes Treasury's daily par yields. Treasury's own XML feed takes 15–20 s per request.
 const treasuryMaturities = [
-  { key: "BC_3MONTH", label: "3M", years: .25 },
-  { key: "BC_1YEAR", label: "1Y", years: 1 },
-  { key: "BC_2YEAR", label: "2Y", years: 2 },
-  { key: "BC_5YEAR", label: "5Y", years: 5 },
-  { key: "BC_10YEAR", label: "10Y", years: 10 },
-  { key: "BC_30YEAR", label: "30Y", years: 30 },
+  { key: "DGS3MO", label: "3M", years: .25 },
+  { key: "DGS1", label: "1Y", years: 1 },
+  { key: "DGS2", label: "2Y", years: 2 },
+  { key: "DGS5", label: "5Y", years: 5 },
+  { key: "DGS10", label: "10Y", years: 10 },
+  { key: "DGS30", label: "30Y", years: 30 },
 ] as const;
 
-export function parseTreasuryYieldXml(xml: string, allowEmpty = false): TreasuryObservation[] {
-  const observations = [...xml.matchAll(/<m:properties>([\s\S]*?)<\/m:properties>/g)].flatMap((entry) => {
-    const body = entry[1];
-    const period = body.match(/<d:NEW_DATE[^>]*>([^<]+)<\/d:NEW_DATE>/)?.[1]?.slice(0, 10) ?? "";
+export function parseTreasuryYieldCsv(csv: string): TreasuryObservation[] {
+  const [header = [], ...rows] = csv.trim().split(/\r?\n/).map((line) => line.split(","));
+  const columns = treasuryMaturities.map((maturity) => header.indexOf(maturity.key));
+  if (columns.some((column) => column < 0)) throw new Error("Treasury yield CSV is missing a maturity");
+  const observations = rows.flatMap((row) => {
     const values: Record<string, number> = {};
-    for (const maturity of treasuryMaturities) {
-      const raw = body.match(new RegExp(`<d:${maturity.key}[^>]*>([^<]+)<\\/d:${maturity.key}>`))?.[1];
-      const value = finiteNumber(raw);
+    treasuryMaturities.forEach((maturity, index) => {
+      const value = finiteNumber(row[columns[index]]);
       if (value != null) values[maturity.key] = value;
-    }
-    return period && Object.keys(values).length === treasuryMaturities.length ? [{ period, values }] : [];
+    });
+    return row[0] && Object.keys(values).length === treasuryMaturities.length ? [{ period: row[0], values }] : [];
   });
-  if (!observations.length && !allowEmpty) throw new Error("Treasury yield curve feed has no complete observations");
-  return observations.sort((a, b) => a.period.localeCompare(b.period));
+  if (!observations.length) throw new Error("Treasury yield CSV has no complete observations");
+  return observations;
 }
 
 function nearestObservation(observations: TreasuryObservation[], target: Date, maxLagDays = 10) {
@@ -790,16 +790,17 @@ export function buildTreasuryCurve(observations: TreasuryObservation[]) {
   return {
     asOf: latest.period,
     curves,
-    spreads: { twoTen: latest.values.BC_10YEAR - latest.values.BC_2YEAR, threeMonthTen: latest.values.BC_10YEAR - latest.values.BC_3MONTH },
-    source: "U.S. Treasury",
+    spreads: { twoTen: latest.values.DGS10 - latest.values.DGS2, threeMonthTen: latest.values.DGS10 - latest.values.DGS3MO },
+    source: "U.S. Treasury via FRED",
     sourceUrl: TREASURY_YIELD_CURVE,
   };
 }
 
 async function treasuryCurve() {
-  const year = new Date().getUTCFullYear();
-  const responses = await Promise.all([year - 2, year - 1, year].map((value) => fetchText(`${TREASURY_XML}&field_tdr_date_value=${value}`, "application/xml", 15000)));
-  return buildTreasuryCurve(responses.flatMap((xml) => parseTreasuryYieldXml(xml, true)));
+  const start = new Date(); start.setUTCMonth(start.getUTCMonth() - 13);
+  const ids = treasuryMaturities.map((maturity) => maturity.key).join(",");
+  const csv = await fetchText(`${FRED_CSV}?id=${ids}&cosd=${start.toISOString().slice(0, 10)}`, "text/csv", 15000);
+  return buildTreasuryCurve(parseTreasuryYieldCsv(csv));
 }
 
 type OfficialRelease = { label: string; releaseAt: string; source: string; sourceUrl: string };
